@@ -1,3 +1,5 @@
+/* 09/10: nombre del usuario (JARVIS_NOMBRE en .env); vacío = sin nombre */
+const CON_NOMBRE = (n => n ? ", " + n : "")((document.documentElement.dataset.nombre || "").trim());
 /* Pulso del PC · aplicación (fase 2). Sin dependencias.
    Contratos con el servidor (webpanel.py): POST /api/<acción> con cabecera X-Jarvis: 1; GET /api/job/<id>; POST /logout.
    Todo lo que viene del servidor se pinta con textContent. localStorage solo guarda preferencias no sensibles
@@ -42,7 +44,7 @@ const Session = { dead: false,
     timers.forEach(clearTimeout); timers.clear(); Pollers.forEach(p => p.stop());
     Mando.cerrar(); Hoja.cerrarTodas(); Conv.parar(); Voz.parar(); desmontar();
     const tt = kind === "cerrada" ? "Sesión cerrada" : "Sesión caducada";
-    const tx = kind === "cerrada" ? "Hasta luego, David. Para volver, pide otro enlace con /web en Telegram."
+    const tx = kind === "cerrada" ? "Hasta luego" + CON_NOMBRE + ". Para volver, pide otro enlace con /web en Telegram."
       : "Por seguridad la sesión se ha cerrado. Pide otro enlace con /web en Telegram.";
     const box = h("div", { class: "fin", role: "alertdialog", "aria-modal": "true", "aria-labelledby": "finT" }, h("div", null, h("h2", { id: "finT", tabindex: "-1", text: tt }), h("p", { text: tx })));
     ["main", "top"].forEach(id => { const e = id === "main" ? document.querySelector("main") : $(id); e && e.setAttribute("inert", ""); });
@@ -204,7 +206,7 @@ function titularDe(d) {
   if (g.t >= 70) return "Caliente y a tope.";
   if (g.u >= 50 || d.cpu >= 70) return "Trabajando a tope.";
   if (g.u >= 15 || d.cpu >= 35) return "Trabajando.";
-  return "Todo en orden, David.";
+  return "Todo en orden" + CON_NOMBRE + ".";
 }
 function pintaTitular(d) { const t = titularDe(d); if (t === titActual) return; const primera = !titActual; titActual = t; palabras($("titular"), t, primera ? 500 : 0); }
 function atmosfera(t) {

@@ -30,8 +30,16 @@
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/control.jpg" alt="Control"><br><sub><b>Control</b>: vigilante, energía y lo que está abierto</sub></td>
-    <td width="50%"><img src="docs/lanzar.jpg" alt="Lanzar"><br><sub><b>Lanzar</b>: programas y webs a un toque</sub></td>
+    <td width="50%"><img src="docs/hablar.jpg" alt="Hablar"><br><sub><b>Hablar</b>: toca y habla, o manos libres</sub></td>
+    <td width="50%"><img src="docs/conv.jpg" alt="Conversación"><br><sub><b>Conversación</b>: elige Claude Code, Antigravity o IA local, y si solo lee o actúa</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/pantalla.jpg" alt="Pantalla"><br><sub><b>Pantalla</b> en directo y mando con touchpad</sub></td>
+    <td width="50%"><img src="docs/control.jpg" alt="Control"><br><sub><b>Control</b>: vigilante, máximos del día y eventos</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/lanzar.jpg" alt="Lanzar"><br><sub><b>Lanzar</b>: apps, webs y comprobaciones a un toque</sub></td>
+    <td width="50%" align="center"><img src="docs/hablar_movil.jpg" alt="En el móvil" width="45%"> <img src="docs/pulso_movil.jpg" alt="Pulso en el móvil" width="45%"><br><sub><b>En el móvil</b></sub></td>
   </tr>
 </table>
 
@@ -42,6 +50,7 @@
 3. Abre tu bot en Telegram y pulsa *Iniciar*.
 4. `LANZAR.cmd` para probar con ventana. Si todo va bien, `INSTALAR.cmd` lo deja arrancando solo al iniciar sesión.
 5. `PONER_PIN.cmd` y `PONER_TOTP.cmd` configuran el acceso al panel web desde el móvil.
+6. Opcional: `JARVIS_NOMBRE=TuNombre` en `.env` para que el panel te salude por tu nombre.
 
 ## Estructura
 
@@ -49,7 +58,7 @@
 |---|---|
 | `jarvis.py` | Proceso principal: bot de Telegram, vigilante, agenda y arranque del panel |
 | `webpanel.py` | Panel web (API + sesiones, PIN, TOTP, dispositivos) |
-| `ui/` | Interfaz móvil (estilo Campaña) |
+| `ui/` | Interfaz web para el móvil (una sola página: Hablar, Pantalla, Conversación, Pulso, Lanzar, Control) |
 | `backends.py` | Cerebros alternativos: Antigravity (`agy`), OpenCode + IA local |
 | `pedro_mcp.py` | Herramientas propias de Pedro (servidor MCP): ver pantalla, procesos, ventanas, memoria, agenda… |
 | `remoto.py`, `voz.py`, `stt.py` | Mando remoto, voz y dictado |

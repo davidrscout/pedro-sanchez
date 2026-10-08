@@ -22,7 +22,6 @@ workspace/
 ui/_diseno/
 ui/_antes_*/
 ui/_fase2/
-ui/static/proto/
 ui/static/app/app_termo_backup.js
 # Configuración personal (en el repo van los .example)
 launchers.json

@@ -379,7 +379,9 @@ class Handler(BaseHTTPRequestHandler):
             if not session_valid(self):
                 return self._send(302, "", extra={"Location": "/gone"})
             old_ui = "ui=v1" in self.headers.get("Cookie", "")
-            return self._send(200, ui("app_v1.html" if old_ui else "app.html", APP_HTML), "text/html; charset=utf-8")
+            nombre = re.sub(r"[^\w áéíóúüñÁÉÍÓÚÜÑ-]", "", str(CFG.get("JARVIS_NOMBRE", "")))[:30].strip()  # 09/10: nombre del usuario, configurable
+            html = ui("app_v1.html" if old_ui else "app.html", APP_HTML).replace('<html lang="es">', f'<html lang="es" data-nombre="{nombre}">', 1)
+            return self._send(200, html, "text/html; charset=utf-8")
         if path.startswith("/api/job/"):
             if not session_valid(self):
                 return self._json(401, {"error": "sesion"})
