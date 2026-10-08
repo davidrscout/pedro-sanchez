@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" role="img" aria-label="Emblema de Pedro Sánchez">
+  <defs>
+    <radialGradient id="planeta" cx="36%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#e6f3ff"/>
+      <stop offset=".16" stop-color="#93c8ff"/>
+      <stop offset=".42" stop-color="#4b7dff"/>
+      <stop offset=".72" stop-color="#3a208c"/>
+      <stop offset="1" stop-color="#0d0828"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset=".55" stop-color="#5ba8ff" stop-opacity=".35"/>
+      <stop offset=".75" stop-color="#7c48d6" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#7c48d6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sombra" cx="72%" cy="78%" r="70%">
+      <stop offset="0" stop-color="#05060b" stop-opacity=".75"/>
+      <stop offset=".6" stop-color="#05060b" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="anillo" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#9ecbff" stop-opacity="0"/>
+      <stop offset=".25" stop-color="#9ecbff" stop-opacity=".9"/>
+      <stop offset=".6" stop-color="#ffffff"/>
+      <stop offset=".85" stop-color="#a78bfa" stop-opacity=".8"/>
+      <stop offset="1" stop-color="#a78bfa" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="brillo" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6"/></filter>
+    <clipPath id="mitadDelantera"><rect x="0" y="400" width="800" height="400"/></clipPath>
+    <clipPath id="mitadTrasera"><rect x="0" y="0" width="800" height="400"/></clipPath>
+    <path id="orbita" d="M 70 400 A 330 92 0 1 0 730 400 A 330 92 0 1 0 70 400"/>
+  </defs>
+
+  <!-- estrellas -->
+  <g fill="#fff">
+    <circle cx="96" cy="120" r="2.2" opacity=".8"><animate attributeName="opacity" values=".8;.25;.8" dur="4.2s" repeatCount="indefinite"/></circle>
+    <circle cx="690" cy="96" r="1.6" opacity=".6"><animate attributeName="opacity" values=".6;.15;.6" dur="5.6s" repeatCount="indefinite"/></circle>
+    <circle cx="720" cy="640" r="2" opacity=".7"><animate attributeName="opacity" values=".2;.8;.2" dur="3.8s" repeatCount="indefinite"/></circle>
+    <circle cx="140" cy="690" r="1.4" opacity=".5"/>
+    <circle cx="560" cy="60" r="1.2" opacity=".5"/>
+    <circle cx="40" cy="430" r="1.3" opacity=".45"/>
+    <path d="M630 210 l5 15 15 5 -15 5 -5 15 -5 -15 -15 -5 15 -5z" fill="#cfe5ff" opacity=".85"><animate attributeName="opacity" values=".85;.3;.85" dur="6s" repeatCount="indefinite"/></path>
+  </g>
+
+  <g transform="rotate(-18 400 400)">
+    <!-- anillo por detrás del planeta -->
+    <g clip-path="url(#mitadTrasera)">
+      <ellipse cx="400" cy="400" rx="330" ry="92" fill="none" stroke="url(#anillo)" stroke-width="5" opacity=".55"/>
+      <ellipse cx="400" cy="400" rx="300" ry="80" fill="none" stroke="#9ecbff" stroke-width="1.5" opacity=".25"/>
+      <g><circle r="13" fill="#9fb4d8"/><circle r="26" fill="#9ecbff" opacity=".3" filter="url(#brillo)"/><animateMotion dur="14s" repeatCount="indefinite"><mpath href="#orbita"/></animateMotion></g>
+    </g>
+    <!-- planeta -->
+    <circle cx="400" cy="400" r="250" fill="url(#halo)"/>
+    <circle cx="400" cy="400" r="185" fill="url(#planeta)"/>
+    <circle cx="400" cy="400" r="185" fill="url(#sombra)"/>
+    <circle cx="400" cy="400" r="185" fill="none" stroke="#bfe0ff" stroke-width="2" opacity=".35"/>
+    <!-- bandas de nubes -->
+    <g fill="none" stroke="#dff0ff" stroke-linecap="round" opacity=".18">
+      <path d="M235 360 Q400 330 565 360" stroke-width="10"/>
+      <path d="M222 415 Q400 395 578 418" stroke-width="6"/>
+      <path d="M250 470 Q400 455 550 475" stroke-width="12"/>
+    </g>
+    <!-- anillo por delante -->
+    <g clip-path="url(#mitadDelantera)">
+      <ellipse cx="400" cy="400" rx="330" ry="92" fill="none" stroke="url(#anillo)" stroke-width="10" filter="url(#brillo)" opacity=".6"/>
+      <ellipse cx="400" cy="400" rx="330" ry="92" fill="none" stroke="url(#anillo)" stroke-width="5"/>
+      <ellipse cx="400" cy="400" rx="300" ry="80" fill="none" stroke="#9ecbff" stroke-width="1.5" opacity=".5"/>
+      <g><circle r="13" fill="#ffffff"/><circle r="26" fill="#9ecbff" opacity=".3" filter="url(#brillo)"/><animateMotion dur="14s" repeatCount="indefinite"><mpath href="#orbita"/></animateMotion></g>
+    </g>
+  </g>
+</svg>

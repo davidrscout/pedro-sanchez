@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#05060b">
+<meta name="color-scheme" content="dark">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 fill=%22%230b0907%22/%3E%3Cpath d=%22M8 24V8h9a5 5 0 0 1 0 10h-5%22 fill=%22none%22 stroke=%22%23ff5a1f%22 stroke-width=%224%22/%3E%3C/svg%3E">
+<title>Pedro Sánchez</title>
+<link rel="preload" href="/s/fonts/anton-400.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:"Anton";src:url("/s/fonts/anton-400.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Barlow";src:url("/s/fonts/barlow-500.woff2") format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Barlow";src:url("/s/fonts/barlow-700.woff2") format("woff2");font-weight:700;font-display:swap}
+:root{--negro:#05060b;--hueso:#f5f5f7;--ceniza:#a0a0b0;--linea:rgba(245,245,247,.18);--brasa:#5ba8ff;--rojo:#ff4d6d;
+  --disp:"Anton","Arial Narrow",sans-serif;--txt:"Barlow",system-ui,sans-serif;
+  --e-out:cubic-bezier(.16,1,.3,1);--sa-t:env(safe-area-inset-top,0px);--sa-b:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--negro);color:var(--hueso);font:500 17px/1.4 var(--txt);overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--brasa);outline-offset:3px}
+::selection{background:var(--brasa);color:var(--negro)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.num{font-variant-numeric:tabular-nums}
+#campo{position:fixed;inset:0;z-index:0;overflow:hidden}
+#campo picture{position:absolute;inset:0}
+#campo img{position:absolute;inset:auto 0 0 0;width:100%;height:72%;-webkit-mask-image:linear-gradient(transparent 0,#000 24%);mask-image:linear-gradient(transparent 0,#000 24%)}
+#foto{object-fit:cover;object-position:50% 100%;animation:entrada 2400ms var(--e-out) both;transition:transform 1100ms cubic-bezier(.7,0,.84,0),filter 1100ms cubic-bezier(.7,0,.84,0);transform-origin:60% 62%}
+@keyframes entrada{from{transform:scale(1.3);opacity:0;filter:brightness(.2)}to{transform:scale(1.06);opacity:1;filter:brightness(.85)}}
+body.dentro #foto{transform:scale(1.9);filter:brightness(2.4)}
+.vino{position:fixed;inset:0;z-index:1;background:linear-gradient(rgba(5,6,11,.92) 0,rgba(5,6,11,.45) 38%,rgba(5,6,11,.62) 66%,rgba(5,6,11,.96));pointer-events:none;transition:opacity 700ms var(--e-out)}
+body.dentro .vino{opacity:0}
+.enl-bar{position:fixed;left:0;right:0;top:0;z-index:5;height:4px;pointer-events:none}
+.enl-bar svg{display:block;width:100%;height:4px}
+.enl-bar line{stroke:var(--hueso);stroke-width:4;stroke-dasharray:100;transition:stroke-dashoffset 250ms linear,stroke 300ms}
+.enl-bar.aviso line{stroke:var(--brasa)}.enl-bar.fin line{stroke:var(--rojo)}
+main{position:relative;z-index:2;height:100%;display:flex;flex-direction:column;justify-content:space-between;
+  padding:calc(var(--sa-t) + 20px) 22px calc(var(--sa-b) + 14px);max-width:560px;margin:0 auto;transition:opacity 500ms var(--e-out),transform 700ms var(--e-out)}
+body.dentro main{opacity:0;transform:translateY(-40px)}
+.top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-weight:700;font-size:17px}
+.top .enl{color:var(--ceniza);font-size:15px;font-weight:500}
+.top .enl.aviso{color:var(--brasa)}.top .enl.fin{color:#ffb3c1}
+.centro{display:flex;flex-direction:column;gap:12px;min-height:0}
+h1{font:400 clamp(54px,17vw,104px)/.9 var(--disp);text-transform:uppercase;margin:0;text-wrap:balance}
+.w{display:inline-block;overflow:hidden;vertical-align:top;padding:.2em 0 .07em;margin:-.2em 0 -.07em}
+.w>span{display:inline-block;transform:translateY(108%);animation:sube 1000ms var(--e-out) both;animation-delay:calc(var(--i,0)*80ms + 350ms)}
+@keyframes sube{to{transform:none}}
+.paso{color:rgba(245,245,247,.8);font-size:16px;margin:0;min-height:22px}
+.puntos{display:flex;gap:10px;height:34px;align-items:center}
+.pt{width:34px;height:5px;background:rgba(245,245,247,.28);transition:background 200ms var(--e-out),transform 260ms var(--e-out)}
+.pt.f{background:var(--hueso);transform:scaleY(1.6)}
+.puntos.g8 .pt{width:22px}
+.puntos.g8 .pt:nth-child(4){margin-right:12px}
+.puntos.no{animation:sacude 420ms cubic-bezier(.36,.07,.19,.97)}
+.puntos.no .pt{background:var(--rojo)}
+.puntos.si .pt{background:var(--brasa)}
+.puntos.espera .pt.f{animation:espera 900ms ease-in-out infinite}
+@keyframes sacude{20%,80%{transform:translateX(6px)}40%,60%{transform:translateX(-10px)}}
+@keyframes espera{50%{opacity:.35}}
+.msg{min-height:44px;max-width:22em;font-size:16px;line-height:1.35;color:rgba(245,245,247,.8);margin:0}
+.msg.err{color:#ffb3c1}.msg.ok{color:var(--hueso);font-weight:700}
+.teclado{display:grid;grid-template-columns:repeat(3,1fr);margin:0 -4px}
+.teclado.off{opacity:.3;pointer-events:none}
+.k{height:clamp(58px,9.4dvh,76px);min-height:52px;border-top:1px solid var(--linea);display:grid;place-items:center;font:400 clamp(34px,5.6dvh,46px)/1 var(--disp);transition:background 140ms var(--e-out),color 140ms var(--e-out),transform 120ms var(--e-out)}
+.k:active,.k.p{background:var(--brasa);color:var(--negro)}
+@media (hover:hover) and (pointer:fine){.k:hover{background:rgba(245,245,247,.1)}}
+.k.otra,.k.entra{font:700 18px var(--txt)}
+.k.otra{color:var(--ceniza)}
+.k.entra{color:var(--brasa)}
+.k.entra:active,.k.entra.p{color:var(--negro)}
+.pie{color:#6b6b7b;font-size:13px;text-align:center;margin:8px 0 0;min-height:17px}
+@media (pointer:coarse){.pie{visibility:hidden}}
+@media (min-width:900px){#campo img{inset:0;height:100%;-webkit-mask-image:none;mask-image:none}#foto{object-position:70% 50%}main{max-width:620px;margin:0 0 0 6vw}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition-duration:1ms!important}.w>span{transform:none}}
+
+/* tema Espacio */
+html,body{background:radial-gradient(70% 55% at 88% 6%,rgba(124,72,214,.30),rgba(124,72,214,0) 70%),radial-gradient(70% 60% at 6% 92%,rgba(16,112,140,.28),rgba(16,112,140,0) 70%),#05060b}
+/* emblema espacial en lugar de la foto */
+#campo #foto{inset:calc(env(safe-area-inset-top,0px) + 70px) -34% auto auto;width:88%;height:auto;aspect-ratio:1;object-fit:contain;-webkit-mask-image:none;mask-image:none;opacity:1}
+@media (min-width:900px){#campo #foto{inset:6% 4% auto auto;width:auto;height:88%}}
+</style>
+</head>
+<body>
+<div id="campo" aria-hidden="true"><img id="foto" src="/s/espacio/astro.svg" alt="" decoding="async" fetchpriority="high"></div>
+<div class="vino" aria-hidden="true"></div>
+<div class="enl-bar" id="anillo" aria-hidden="true"><svg viewBox="0 0 100 4" preserveAspectRatio="none"><line id="anp" x1="0" y1="2" x2="100" y2="2" pathLength="100" stroke-dasharray="100" stroke-dashoffset="0"/></svg></div>
+<main id="main">
+  <div class="top"><b>PC limpio</b><span class="enl num" id="enl">Enlace válido 1:00</span></div>
+  <div class="centro">
+    <h1 id="tit">Escribe tu PIN</h1>
+    <p class="paso" id="paso"></p>
+    <div class="puntos" id="puntos" role="img" aria-label="PIN: 0 dígitos"></div>
+    <p class="msg" id="msg" role="status" aria-live="polite"></p>
+  </div>
+  <div>
+    <div class="teclado" id="teclado" role="group" aria-label="Teclado numérico del PIN"></div>
+    <p class="pie">Teclado físico: números, Retroceso borra, Intro entra, Esc limpia.</p>
+  </div>
+</main>
+<script>
+"use strict";
+/* Contrato con el servidor: webpanel.py sustituye el nonce y la marca de alta al servir. El PIN solo vive en "pin" y nunca toca el DOM. */
+let nonce = "__NONCE__";
+const NEEDS_ENROLL = "__ENROLL__" === "1";
+(function () {
+const $ = id => document.getElementById(id);
+const RM = matchMedia("(prefers-reduced-motion: reduce)");
+const MAXLEN = 12, LINK_S = 60, CODE_LEN = 8;
+let pin = "", code = "", step = NEEDS_ENROLL ? "code" : "pin", busy = false, locked = false, done = false;
+
+/* titular que sube palabra a palabra cada vez que cambia */
+function titulo(t, primera) {
+  const h = $("tit"); if (h.dataset.t === t) return; h.dataset.t = t; h.textContent = ""; let i = 0;
+  for (const w of t.split(/\s+/)) { if (!w) continue; const m = document.createElement("span"), x = document.createElement("span"); m.className = "w"; x.textContent = w;
+    x.style.setProperty("--i", String(i++)); if (!primera) x.style.animationDelay = (i * 70) + "ms"; m.append(x); h.append(m, " "); }
+}
+
+const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "del", "0", "go"];
+const tec = $("teclado"), puntos = $("puntos"), msg = $("msg"), keyEl = {};
+for (const k of KEYS) {
+  const b = document.createElement("button"); b.type = "button"; b.className = "k" + (k === "del" ? " otra" : k === "go" ? " entra" : "");
+  b.textContent = k === "del" ? "Borrar" : k === "go" ? "Entrar" : k;
+  b.setAttribute("aria-label", k === "del" ? "Borrar el último dígito" : k === "go" ? "Entrar" : k);
+  b.addEventListener("click", () => press(k)); tec.append(b); keyEl[k] = b;
+}
+const vibra = p => { try { navigator.vibrate && navigator.vibrate(p); } catch (e) { } };
+function marca(k) { const b = keyEl[k]; if (!b) return; b.classList.add("p"); setTimeout(() => b.classList.remove("p"), 120); }
+function pintaPuntos() {
+  const n = step === "code" ? CODE_LEN : Math.max(4, pin.length); puntos.classList.toggle("g8", step === "code");
+  while (puntos.children.length < n) { const d = document.createElement("span"); d.className = "pt"; puntos.append(d); }
+  while (puntos.children.length > n) puntos.lastChild.remove();
+  [...puntos.children].forEach((d, i) => d.classList.toggle("f", i < pin.length));
+  puntos.setAttribute("aria-label", step === "code" ? "Código de alta: " + pin.length + " de " + CODE_LEN : "PIN: " + pin.length + (pin.length === 1 ? " dígito" : " dígitos"));
+}
+function di(t, kind) { msg.textContent = t || ""; msg.className = "msg" + (kind ? " " + kind : ""); }
+function textosPaso(mantener) {
+  titulo(step === "code" ? "Código de alta" : "Escribe tu PIN");
+  $("paso").textContent = NEEDS_ENROLL ? (step === "code" ? "Dispositivo nuevo. Paso 1 de 2: el código de 8 dígitos." : "Paso 2 de 2: tu PIN.") : "";
+  tec.setAttribute("aria-label", step === "code" ? "Teclado numérico del código de alta" : "Teclado numérico del PIN");
+  keyEl.go.textContent = step === "code" ? "Seguir" : "Entrar"; keyEl.go.setAttribute("aria-label", step === "code" ? "Seguir" : "Entrar");
+  if (!mantener) di(step === "pin" && NEEDS_ENROLL ? "Código anotado. Ahora tu PIN." : "");
+}
+function setPaso(s, mantener) { if (s === step) return; step = s; pintaPuntos(); textosPaso(mantener); vibra(15); }
+function press(k) {
+  if (busy || locked || done) return;
+  if (step === "code") {
+    if (k === "go") { if (pin.length === CODE_LEN) { code = pin; pin = ""; setPaso("pin"); } else di("El código tiene " + CODE_LEN + " dígitos.", "err"); return; }
+    if (k === "del") { if (pin.length) { pin = pin.slice(0, -1); pintaPuntos(); } return; }
+    if (/^\d$/.test(k) && pin.length < CODE_LEN) { pin += k; pintaPuntos(); vibra(10);
+      if (pin.length === CODE_LEN) { busy = true; setTimeout(() => { busy = false; if (step === "code" && pin.length === CODE_LEN) { code = pin; pin = ""; setPaso("pin"); } }, 260); } }
+    return;
+  }
+  if (k === "go") return entrar();
+  if (k === "del") { if (pin.length) { pin = pin.slice(0, -1); pintaPuntos(); } else if (NEEDS_ENROLL) { pin = code; code = ""; setPaso("code"); } return; }
+  if (/^\d$/.test(k) && pin.length < MAXLEN) { pin += k; pintaPuntos(); vibra(10); if (msg.classList.contains("err")) di(""); }
+}
+addEventListener("keydown", e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  let k = null;
+  if (/^\d$/.test(e.key)) k = e.key; else if (e.key === "Backspace" || e.key === "Delete") k = "del"; else if (e.key === "Enter") k = "go";
+  else if (e.key === "Escape") { if (!busy && !done) { pin = ""; pintaPuntos(); } e.preventDefault(); return; }
+  if (k === null) return;
+  if (k === "go" && document.activeElement && document.activeElement.classList.contains("k")) return;
+  e.preventDefault(); marca(k); press(k);
+});
+function bloquea(porque) { locked = true; tec.classList.add("off"); for (const b of tec.children) b.disabled = true; di(porque, "err"); }
+function rechazo() {
+  vibra([70, 50, 70]); puntos.classList.remove("no"); void puntos.offsetWidth; puntos.classList.add("no");
+  setTimeout(() => { puntos.classList.remove("no"); pintaPuntos(); }, 440);
+}
+async function entrar() {
+  if (step !== "pin") return;
+  if (!pin.length) { di("Escribe el PIN."); return; }
+  if (NEEDS_ENROLL && code.length !== CODE_LEN) { pin = ""; setPaso("code"); return; }
+  busy = true; puntos.classList.add("espera"); titulo("Comprobando…");
+  const p = pin; pin = "";
+  const body = NEEDS_ENROLL ? { nonce, pin: p, enroll: code } : { nonce, pin: p };
+  let r = null, j = {};
+  try { r = await fetch("/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store", credentials: "same-origin" });
+    j = await r.json().catch(() => ({})); }
+  catch (e) { busy = false; puntos.classList.remove("espera"); textosPaso(true); pintaPuntos(); di("No hay conexión con el PC. Comprueba la red y vuelve a intentarlo.", "err"); return; }
+  puntos.classList.remove("espera");
+  if (r.ok && j && j.ok) return concedido();
+  busy = false; textosPaso(true);
+  if (r.status === 401) { rechazo();
+    if (j.nonce) { nonce = String(j.nonce);
+      if (NEEDS_ENROLL) { const left = (String(j.error || "").match(/quedan\s+(\d+)/i) || [])[1]; code = ""; setTimeout(() => setPaso("code", true), 460);
+        di("Código o PIN incorrecto." + (left ? " Te quedan " + left + "." : ""), "err"); }
+      else di(String(j.error || "PIN incorrecto."), "err"); }
+    else { const e = String(j.error || "Enlace anulado."); titulo("Enlace anulado"); bloquea(/\/web/.test(e) ? e : e + " Pide otro enlace con /web en Telegram."); }
+    return; }
+  if (r.status === 429) { rechazo(); titulo("Bloqueado"); bloquea(String(j.error || "Panel en pausa por intentos fallidos.")); return; }
+  rechazo(); di(String((j && j.error) || "Error inesperado del servidor (" + r.status + ")."), "err");
+}
+function concedido() {
+  done = true; vibra([20, 40, 30]); code = "";
+  puntos.classList.add("si"); titulo("Acceso concedido"); $("paso").textContent = "";
+  di(NEEDS_ENROLL ? "Dispositivo autorizado. Bienvenido, David." : "Bienvenido, David.", "ok"); tec.classList.add("off");
+  const go = () => location.replace("/app");
+  if (RM.matches) { setTimeout(go, 300); return; }
+  /* la cámara se lanza hacia la gráfica y se entra */
+  setTimeout(() => document.body.classList.add("dentro"), 450);
+  setTimeout(go, 1500);
+}
+/* cuenta atrás informativa del enlace (60 s): una línea que se consume arriba del todo */
+(function () {
+  const t0 = performance.now(), enl = $("enl"), an = $("anillo"), anp = $("anp");
+  function tick() { if (done) return;
+    const left = Math.max(0, LINK_S - (performance.now() - t0) / 1000), s = Math.ceil(left);
+    enl.textContent = left > 0 ? "Enlace válido " + Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") : "Enlace caducado";
+    anp.setAttribute("stroke-dashoffset", String(100 - left / LINK_S * 100));
+    const w = left <= 10 && left > 0; enl.classList.toggle("aviso", w); an.classList.toggle("aviso", w);
+    if (left <= 0) { enl.classList.add("fin"); an.classList.add("fin"); if (!locked && !busy && !msg.textContent) di("El enlace ha caducado. Si falla, pide otro con /web."); return; }
+    setTimeout(tick, 250); }
+  tick();
+})();
+if (nonce.indexOf("__NON" + "CE__") === 0) bloquea("Abre esta página desde el enlace de /web.");
+pintaPuntos(); titulo(step === "code" ? "Código de alta" : "Escribe tu PIN", true); textosPaso(locked);
+})();
+</script>
+</body>
+</html>

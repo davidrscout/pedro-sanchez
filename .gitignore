@@ -1,0 +1,31 @@
+# Secretos y datos personales: NUNCA al repo
+.env
+devices.json
+totp_state.json
+webpanel_state.json
+jarvis_state.json
+pending_delete.json
+memoria.json
+agenda.json
+perfil.md
+telemetria.jsonl
+router/env
+_mcp_*.json
+# Generado / local
+*.log
+__pycache__/
+.pytest_cache/
+workspace/
+*.bak_*
+*.bak
+# Maquetas y versiones antiguas de la interfaz (224 MB)
+ui/_diseno/
+ui/_antes_*/
+ui/_fase2/
+ui/static/proto/
+ui/static/app/app_termo_backup.js
+# Configuración personal (en el repo van los .example)
+launchers.json
+router/rearmar_router.vbs
+# Prototipos con datos de ejemplo de proyectos privados
+dev_proto*.py

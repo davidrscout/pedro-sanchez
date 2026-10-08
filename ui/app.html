@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#05060b">
+<meta name="color-scheme" content="dark">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 fill=%22%230b0907%22/%3E%3Cpath d=%22M8 24V8h9a5 5 0 0 1 0 10h-5%22 fill=%22none%22 stroke=%22%23ff5a1f%22 stroke-width=%224%22/%3E%3C/svg%3E">
+<title>Pedro Sánchez</title>
+<link rel="preload" href="/s/fonts/anton-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/s/fonts/barlow-500.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/s/app/app.css">
+</head>
+<body class="unica">
+<a class="skip" href="#main">Saltar al contenido</a>
+
+<!-- Telón: una fotografía por pestaña, se funden entre sí -->
+<div class="telon" aria-hidden="true">
+</div>
+
+<header class="top" id="top"><div class="in">
+  <button class="equipo" id="equipo" type="button" aria-haspopup="dialog">PC limpio<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
+  <span class="fresco num" id="fresco">conectando…</span>
+  <button class="salir" id="salir" type="button">Salir</button>
+</div></header>
+
+<main id="main" tabindex="-1">
+  <h1 class="sr">Pedro Sánchez, centro de mando del PC</h1>
+
+  <!-- ===================== HABLAR ===================== -->
+  <section class="vista" id="v-hablar" aria-labelledby="h-hablar">
+    <div class="col">
+      <h2 class="gigante" id="h-hablar" data-lc-ignore>Habla con Pedro.</h2>
+      <div class="orbe-zona" id="orbe-zona">
+        <button class="orbe" id="orbe" type="button" aria-pressed="false" aria-label="Hablar con Pedro" data-estado="reposo">
+          <span class="aro" aria-hidden="true"></span><span class="aro a2" aria-hidden="true"></span><span class="nucleo" aria-hidden="true"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+        <p class="vz-estado" id="vz-estado" role="status" aria-live="polite">Toca y habla con Pedro</p>
+        <p class="vz-oigo" id="vz-oigo" aria-live="off"></p>
+        <div class="vz-ops">
+          <button class="sw" id="manos" type="button" role="switch" aria-checked="true"><i aria-hidden="true"></i>Manos libres</button>
+          <button class="bt" id="pulsar" type="button">Mantén para hablar</button>
+        </div>
+        <p class="nota" id="vz-nota" hidden></p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===================== PANTALLA (mando remoto) ===================== -->
+  <section class="vista" id="v-pantalla" aria-labelledby="h-pantalla">
+    <div class="mando" id="mando">
+      <div class="m-cab"><h2 class="gigante" id="h-pantalla" data-lc-ignore>Pantalla.</h2><span class="m-hora num" id="m-hora" role="status"></span></div>
+      <div class="m-zona">
+        <div class="m-lienzo" id="m-lienzo" tabindex="0" aria-label="Pantalla del PC. Toca para abrir el mando a pantalla completa.">
+          <img id="m-img" alt="Pantalla del PC limpio" draggable="false">
+          <i class="m-cursor" id="m-cursor" aria-hidden="true" hidden></i>
+          <i class="m-toque" id="m-toque" aria-hidden="true"></i>
+          <p class="m-carg" id="m-carg">Conectando con la pantalla del PC…</p>
+        </div>
+        <div class="m-rueda" id="m-rueda" tabindex="0" role="button" aria-label="Rueda del ratón: arrastra arriba o abajo para desplazar"><span aria-hidden="true">⇅</span></div>
+      </div>
+      <div class="m-teclas" id="m-teclas" hidden>
+        <button class="bt" type="button" data-k="esc">Esc</button><button class="bt" type="button" data-k="tab">Tab</button>
+        <button class="bt" type="button" data-mod="ctrl" aria-pressed="false">Ctrl</button><button class="bt" type="button" data-mod="alt" aria-pressed="false">Alt</button>
+        <button class="bt" type="button" data-mod="win" aria-pressed="false">Win</button><button class="bt" type="button" data-k="retroceso" aria-label="Borrar atrás">⌫</button>
+        <button class="bt" type="button" data-k="izq" aria-label="Flecha izquierda">←</button><button class="bt" type="button" data-k="arriba" aria-label="Flecha arriba">↑</button>
+        <button class="bt" type="button" data-k="abajo" aria-label="Flecha abajo">↓</button><button class="bt" type="button" data-k="der" aria-label="Flecha derecha">→</button>
+        <button class="bt" type="button" data-k="borrar">Supr</button><button class="bt fuerte" type="button" data-k="enter">Intro</button>
+      </div>
+      <div class="m-barra" role="toolbar" aria-label="Herramientas del mando">
+        <button class="bt fuerte" type="button" id="m-full">Abrir mando</button>
+        <button class="bt solo-full" type="button" id="m-modo">Modo ratón</button>
+        <button class="bt solo-full" type="button" id="m-teclado" aria-pressed="false">Teclado</button>
+        <button class="bt solo-full" type="button" id="m-der" aria-pressed="false">Clic dcho.</button>
+        <button class="bt solo-full" type="button" id="m-zmas" aria-label="Acercar">Zoom +</button>
+        <button class="bt solo-full" type="button" id="m-zmenos" aria-label="Alejar">Zoom −</button>
+        <button class="bt" type="button" id="m-atajos">Atajos</button>
+        <button class="bt" type="button" id="m-vent">Ventanas</button>
+        <button class="bt solo-full" type="button" id="m-pausa" aria-pressed="false">Pausa</button>
+      </div>
+      <p class="m-ay">Toca la imagen para abrir el mando. Dentro, el móvil hace de touchpad: arrastras el dedo para mover la flecha y tocas para clicar; la barra ⇅ desplaza. Mejor con el móvil en horizontal.</p>
+      <p class="m-ay2 sr" id="m-ay2" aria-live="polite"></p>
+      <textarea class="kb-capt" id="m-kb" rows="1" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Teclado remoto: lo que escribas aquí se teclea en el PC" tabindex="-1"></textarea>
+    </div>
+  </section>
+
+  <!-- ===================== CONVERSACIÓN ===================== -->
+  <section class="vista" id="v-conv" aria-labelledby="h-conv">
+    <div class="col">
+      <h2 class="gigante" id="h-conv" data-lc-ignore>Conversación.</h2>
+      <div class="log" id="log" role="log" aria-live="polite" aria-label="Conversación con Pedro">
+        <div class="vacio" id="vacio"><p>Pregunta lo que quieras sobre el PC.</p>
+          <div class="sug"><button class="lnk" type="button">¿Qué está haciendo ahora el PC?</button><button class="lnk" type="button">¿Cómo va la temperatura de la gráfica?</button><button class="lnk" type="button">¿Ha habido cuelgues hoy?</button></div></div>
+      </div>
+      <div class="txt-op" id="txt-op">
+      <div class="seg cerebros" id="cerebros" role="radiogroup" aria-label="Quién contesta"></div>
+      <div class="seg modos" id="modos" role="radiogroup" aria-label="Qué puede hacer">
+        <button type="button" role="radio" data-modo="ask" aria-checked="true"><b>Leer</b><span>mira y propone; no toca nada</span></button>
+        <button type="button" role="radio" data-modo="do" aria-checked="false" tabindex="-1"><b>Actuar</b><span>cambia cosas en el PC</span></button>
+      </div>
+      <p class="mhint" id="mhint">Leer: solo mira y planifica; no toca nada del PC.</p>
+      <div class="voz" id="voz"><button class="sw" id="tts" type="button" role="switch" aria-checked="false"><i aria-hidden="true"></i>Pedro también habla cuando le escribo</button><span class="nota" id="voznota" hidden></span></div>
+      <p style="margin:0 0 6px"><button class="lnk" type="button" id="c-nueva" style="font-size:15px;min-height:36px">Empezar conversación nueva</button></p>
+      <form class="comp" id="comp" autocomplete="off">
+        <textarea id="ta" rows="1" maxlength="4000" placeholder="Dile algo a Pedro" aria-label="Mensaje para Pedro"></textarea>
+        <button class="ico" id="mic" type="button" aria-label="Dictar por voz" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        <button class="bt fuerte env" id="enviar" type="submit" disabled>Enviar</button>
+      </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PULSO ===================== -->
+  <section class="vista" id="v-pulso" aria-labelledby="h-pulso">
+    <h2 class="sr" id="h-pulso">Pulso del PC</h2>
+    <div class="hero" id="hero">
+      <div class="fondo" aria-hidden="true">
+        <img id="foto" src="/s/espacio/astro.svg" alt="" decoding="async" fetchpriority="high">
+        <div class="brillo"></div>
+        <canvas id="polvo" data-lc-ignore></canvas>
+        <div class="vino"></div>
+      </div>
+      <div class="texto">
+        <p class="titular" id="titular" aria-live="polite" data-lc-ignore></p>
+        <p class="dato" id="dato" data-lc-ignore><span class="n num" id="sv">—</span><span class="u" id="sn">grados</span></p>
+        <p class="frase" id="frase"></p>
+        <p class="aviso" id="aviso" role="status"></p>
+        <p class="hechos num" id="hechos" data-lc-wrap-ok></p>
+      </div>
+      <div class="sinsenal" id="sinsenal" role="alert" hidden>
+        <p>El PC no responde. Pide <b>/web</b> con tu código del Authenticator en Telegram: encenderlo desde ahí llegará pronto.</p>
+        <p class="ult" id="ult"></p>
+      </div>
+    </div>
+
+    <div class="pulso-col">
+      <h2 class="rev gran" data-lc-ignore>Ahora mismo</h2>
+      <dl class="lect">
+        <div class="r rev"><dt>Carga de la gráfica</dt><dd class="num" id="r-gu" data-lc-ignore>—</dd><div class="h"><i id="h-gu"></i></div></div>
+        <div class="r rev"><dt>Consumo de la gráfica</dt><dd class="num" id="r-gw" data-lc-ignore>—</dd><div class="h"><i id="h-gw"></i></div></div>
+        <div class="r rev"><dt>Memoria de vídeo</dt><dd class="num" id="r-vr" data-lc-ignore>—</dd><div class="h"><i id="h-vr"></i></div></div>
+        <div class="r rev"><dt>Procesador</dt><dd class="num" id="r-cpu" data-lc-ignore>—</dd><div class="h"><i id="h-cpu"></i></div></div>
+        <div class="r rev"><dt>Memoria libre</dt><dd class="num" id="r-ram" data-lc-ignore>—</dd><div class="h"><i id="h-ram"></i></div></div>
+        <div class="r rev"><dt>Disco C:</dt><dd class="num" id="r-dk" data-lc-ignore>—</dd><div class="h"><i id="h-dk"></i></div></div>
+      </dl>
+      <div class="latido rev" id="lat"><svg viewBox="0 0 46 18" aria-hidden="true"><path d="M1 10h12l3-6 4 12 4-14 3 8h18"/></svg><span id="latT">Esperando al vigilante…</span></div>
+      <div class="sismo rev" id="sismo" hidden>
+        <h2 class="gran" data-lc-ignore>Las últimas 24 horas</h2>
+        <p class="sm-lg num" id="sm-lg" aria-live="polite"></p>
+        <svg class="sm-svg" id="sm-svg" viewBox="0 0 288 60" preserveAspectRatio="none" aria-hidden="true" data-lc-ignore></svg>
+        <div class="sm-ax num" aria-hidden="true"><span id="sm-a0"></span><span id="sm-a1"></span><span>ahora</span></div>
+        <p class="sr" id="sm-sr"></p>
+      </div>
+      <div class="pulso-acc rev" data-lc-wrap-ok><button class="lnk" type="button" data-ir="pantalla">Controlar la pantalla del PC</button><button class="lnk" type="button" data-ir="control">Vigilante y eventos</button></div>
+    </div>
+  </section>
+
+  <!-- ===================== LANZAR ===================== -->
+  <section class="vista" id="v-lanzar" aria-labelledby="h-lanzar">
+    <div class="col">
+      <h2 class="gigante" id="h-lanzar" data-lc-ignore>Lanza.</h2>
+      <p class="lead">Webs, apps del PC, comprobaciones del VPS y tareas para la IA.</p>
+      <input type="search" id="lz-q" placeholder="Buscar" aria-label="Buscar lanzador" spellcheck="false">
+      <div id="lz" aria-live="polite"><div class="skl"></div><div class="skl"></div><div class="skl"></div></div>
+    </div>
+  </section>
+
+  <!-- ===================== CONTROL ===================== -->
+  <section class="vista" id="v-control" aria-labelledby="h-control">
+    <div class="col">
+      <h2 class="gigante" id="h-control" data-lc-ignore>Control.</h2>
+      <p class="lead">Lo que vigila el PC, su energía y lo que tiene abierto.</p>
+      <section class="sec" aria-labelledby="h-vig"><div class="cab"><h2 id="h-vig">Vigilante</h2><div class="acc"><button class="ico" type="button" id="vig-rf" aria-label="Actualizar el vigilante"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button></div></div><div id="vig" aria-live="polite"><div class="skl"></div><div class="skl"></div></div></section>
+      <section class="sec" aria-labelledby="h-ped"><div class="cab"><h2 id="h-ped">Memoria y agenda de Pedro</h2><div class="acc"><button class="ico" type="button" id="ped-rf" aria-label="Actualizar memoria y agenda"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button></div></div>
+        <p class="nota" id="ped-uso" style="margin:0 0 10px">Lo que Pedro recuerda de ti y lo que tiene programado. Para añadir, díselo hablando: «recuerda que…», «avísame a las…».</p>
+        <h3 class="nota" style="margin:10px 0 0">Agenda</h3><div id="ped-ag" aria-live="polite"></div>
+        <h3 class="nota" style="margin:14px 0 0">Memoria</h3><div id="ped-mem" aria-live="polite"></div></section>
+      <section class="sec" aria-labelledby="h-win"><div class="cab"><h2 id="h-win">Ventanas abiertas</h2><div class="acc"><button class="ico" type="button" id="win-rf" aria-label="Actualizar ventanas"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button></div></div>
+        <p class="nota" style="margin:0 0 10px">Trae una ventana al frente, minimízala, maximízala o ciérrala.</p>
+        <ul class="wins" id="wins" aria-live="polite"></ul></section>
+      <section class="sec" aria-labelledby="h-ene"><div class="cab"><h2 id="h-ene">Energía</h2></div>
+        <div class="energia">
+          <div class="fila-acc"><div class="q"><b>Apagar</b><span>Apagado completo en 15 s. Después solo se enciende por Wake-on-LAN.</span></div><button class="bt peligro" type="button" data-energia="apagar">Apagar</button></div>
+          <div class="fila-acc"><div class="q"><b>Reiniciar</b><span>Vuelve en un par de minutos.</span></div><button class="bt peligro" type="button" data-energia="reiniciar">Reiniciar</button></div>
+          <div class="fila-acc"><div class="q"><b>Bloquear</b><span>Para desbloquearlo hará falta estar delante del PC.</span></div><button class="bt" type="button" data-energia="bloquear">Bloquear</button></div>
+          <div class="fila-acc"><div class="q"><b>Cancelar</b><span>Anula un apagado o reinicio en cuenta atrás.</span></div><button class="bt" type="button" id="cancelar">Cancelar</button></div>
+        </div>
+        <div id="pend"></div></section>
+      <section class="sec" aria-labelledby="h-vol"><div class="cab"><h2 id="h-vol">Volumen</h2></div>
+        <div class="vol"><button class="bt" type="button" data-vol="down">Bajar</button><button class="bt" type="button" data-vol="mute">Silenciar</button><button class="bt" type="button" data-vol="up">Subir</button></div></section>
+      <section class="sec" aria-labelledby="h-pro"><div class="cab"><h2 id="h-pro">Procesos</h2><div class="acc"><button class="ico" type="button" id="pro-rf" aria-label="Actualizar procesos"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button></div></div>
+        <div class="seg peq" role="tablist" aria-label="Vista de procesos"><button type="button" role="tab" id="t-top" aria-selected="true"><b>Procesos <span class="num" id="n-top"></span></b></button><button type="button" role="tab" id="t-win" aria-selected="false"><b>Ventanas <span class="num" id="n-win"></span></b></button></div>
+        <input class="filtro" type="search" id="pro-q" placeholder="Filtrar por nombre" aria-label="Filtrar procesos por nombre" spellcheck="false">
+        <ul class="procs" id="procs" aria-live="polite"></ul></section>
+      <section class="sec" aria-labelledby="h-ev"><div class="cab"><h2 id="h-ev">Eventos graves, últimas 24 h</h2><div class="acc"><button class="ico" type="button" id="ev-rf" aria-label="Actualizar eventos"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button></div></div><div id="ev" aria-live="polite"></div></section>
+      <section class="sec" aria-labelledby="h-red"><div class="cab"><h2 id="h-red">Red</h2><div class="acc"><button class="ico" type="button" id="red-cp" aria-label="Copiar el informe de red"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12"/><path d="M16 8V4H4v12h4"/></svg></button><button class="ico" type="button" id="red-rf" aria-label="Actualizar red"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button></div></div><pre class="salida" id="red">Consultando la red…</pre></section>
+    </div>
+  </section>
+</main>
+
+
+<div class="toasts" id="toasts" role="status" aria-live="polite" data-lc-ignore></div>
+
+<script src="/s/proto/pulso.js"></script>
+<script src="/s/app/app.js"></script>
+</body>
+</html>

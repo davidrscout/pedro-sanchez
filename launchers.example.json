@@ -1,0 +1,66 @@
+{
+  "_ayuda": "Lanzadores del panel. Editable a mano. tipos: url (abre en el móvil o en el PC), app (programa o esquema), carpeta, cmd (PowerShell local, solo lectura salvo que se diga), ssh (comando en el VPS), ia (rellena el chat con un prompt con contexto). confirmar:true pide confirmación antes de ejecutar. 'ia' puede llevar backend/modo sugeridos.",
+  "vps": {
+    "host": "usuario@tu-servidor",
+    "clave": "C:/Users/TU_USUARIO/.ssh/tu_clave"
+  },
+  "grupos": [
+    {
+      "id": "apps",
+      "nombre": "Apps"
+    },
+    {
+      "id": "correos",
+      "nombre": "Correos"
+    },
+    {
+      "id": "paneles",
+      "nombre": "Paneles"
+    },
+    {
+      "id": "servidores",
+      "nombre": "Servidores"
+    },
+    {
+      "id": "proyectos",
+      "nombre": "Proyectos con IA"
+    }
+  ],
+  "items": [
+    {
+      "id": "app_chrome",
+      "grupo": "apps",
+      "label": "Chrome",
+      "tipo": "app",
+      "destino": "C:/Program Files/Google/Chrome/Application/chrome.exe"
+    },
+    {
+      "id": "mail",
+      "grupo": "correos",
+      "label": "Gmail",
+      "tipo": "url",
+      "destino": "https://mail.google.com/"
+    },
+    {
+      "id": "web_ejemplo",
+      "grupo": "paneles",
+      "label": "Mi web",
+      "tipo": "url",
+      "destino": "https://ejemplo.com"
+    },
+    {
+      "id": "srv_estado",
+      "grupo": "servidores",
+      "label": "Estado del servidor",
+      "tipo": "ssh",
+      "destino": "uptime && df -h /"
+    },
+    {
+      "id": "carpeta_dev",
+      "grupo": "proyectos",
+      "label": "Proyectos",
+      "tipo": "carpeta",
+      "destino": "C:/Dev"
+    }
+  ]
+}
