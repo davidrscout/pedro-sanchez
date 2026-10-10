@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import threading
 import time
+import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -45,6 +46,7 @@ NONCES = {}     # nonce -> {"token": t, "t": creado}
 SESS = {"sid": None, "t0": 0, "last": 0}
 JOBS = {}
 TUN = {"proc": None, "url": None, "since": 0}
+TUNNEL_METRICS_PORT = 20245   # puerto fijo de métricas de cloudflared (/ready)
 LOCKS = {"tun": threading.Lock(), "state": threading.Lock(), "srv": threading.Lock()}
 SERVER = {"httpd": None}
 LINK_TIMES = []
@@ -213,13 +215,31 @@ def ensure_server():
         SERVER["httpd"] = httpd
 
 
+def tunnel_healthy():
+    """True si cloudflared tiene conexiones vivas con Cloudflare (puerto de métricas /ready).
+    Un túnel rápido que pierde la red se queda como proceso vivo pero sin conexiones y con
+    el dominio borrado: reutilizar su URL da enlaces muertos."""
+    p = TUN.get("proc")
+    if not p or p.poll() is not None or not TUN.get("url"):
+        return False
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{TUNNEL_METRICS_PORT}/ready", timeout=3) as r:
+            d = json.loads(r.read().decode("utf-8", "replace"))
+        return int(d.get("readyConnections", 0)) > 0
+    except Exception:
+        return False
+
+
 def ensure_tunnel():
     with LOCKS["tun"]:
-        if TUN["proc"] and TUN["proc"].poll() is None and TUN["url"]:
+        if tunnel_healthy():
             return TUN["url"]
+        if TUN["proc"] and TUN["proc"].poll() is None:
+            log("túnel sin conexión con Cloudflare: se reinicia")
         stop_tunnel()
         ensure_server()
-        p = subprocess.Popen([CLOUDFLARED, "tunnel", "--url", f"http://127.0.0.1:{PORT}", "--no-autoupdate"],
+        p = subprocess.Popen([CLOUDFLARED, "tunnel", "--url", f"http://127.0.0.1:{PORT}", "--no-autoupdate",
+                              "--metrics", f"127.0.0.1:{TUNNEL_METRICS_PORT}"],
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=NOWIN,
                              text=True, encoding="utf-8", errors="replace")
         found = threading.Event()
@@ -235,8 +255,35 @@ def ensure_tunnel():
         if not found.wait(40):
             stop_tunnel()
             raise RuntimeError("El túnel de Cloudflare no arrancó a tiempo.")
-        time.sleep(2)  # que el DNS del túnel se propague
+        # esperar a que haya conexión real (y que el DNS del túnel se propague)
+        for _ in range(20):
+            if tunnel_healthy():
+                break
+            time.sleep(1)
+        else:
+            stop_tunnel()
+            raise RuntimeError("El túnel de Cloudflare arrancó pero no conecta.")
+        # 11/10: «conectado» no basta: la dirección nueva tarda unos segundos en funcionar desde fuera,
+        # y si el móvil la abre en ese hueco se queda en blanco (y cachea el fallo). Se manda el enlace
+        # solo cuando el propio PC entra por internet (DNS + Cloudflare) y le contesta Pedro.
+        t0 = time.time()
+        while time.time() - t0 < 30:
+            if tunnel_reachable(TUN["url"]):
+                log(f"túnel comprobado desde internet en {time.time() - t0:.1f} s")
+                break
+            time.sleep(1.5)
+        else:
+            log("túnel NO comprobado desde internet en 30 s (se manda el enlace igualmente)")
         return TUN["url"]
+
+
+def tunnel_reachable(url):
+    """True si https://<túnel>/ping llega por internet hasta este servidor (y no a una página de error de Cloudflare)."""
+    try:
+        with urllib.request.urlopen(url + "/ping", timeout=5) as r:
+            return r.status == 200 and r.read(16) == b"pong"
+    except Exception:
+        return False
 
 
 def new_link():
@@ -275,10 +322,19 @@ def session_valid(handler):
 
 def janitor():
     idle_since = None
+    dead_since = None
     while True:
         time.sleep(15)
         try:
             now = time.time()
+            if TUN["proc"] and TUN["proc"].poll() is None and not tunnel_healthy():
+                dead_since = dead_since or now
+                if now - dead_since > 60:
+                    stop_tunnel()
+                    log("túnel sin conexión con Cloudflare: cerrado (el próximo enlace lo reabre)")
+                    dead_since = None
+            else:
+                dead_since = None
             if SESS["sid"] and (now - SESS["last"] > SESSION_IDLE or now - SESS["t0"] > SESSION_MAX):
                 SESS["sid"] = None
             live_tok = any((not v["dead"]) and now - v["t"] < TOKEN_TTL for v in TOKENS.values())
@@ -357,6 +413,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self._host_ok():
             return self._send(421, "no")
         path = self.path.split("?")[0]
+        if path == "/ping":   # comprobación de alcance del túnel (ensure_tunnel); no da información
+            return self._send(200, "pong", "text/plain; charset=utf-8")
         if path.startswith("/t/"):
             tok = path[3:]
             t = TOKENS.get(tok)
