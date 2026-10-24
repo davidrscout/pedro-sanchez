@@ -1318,13 +1318,13 @@ registerWidget({id:"ev",title:"Eventos graves · 24 h",icon:"alert",area:"ev",
   }});
 
 /* ---- Chat: selector de cerebro + modo Leer/Actuar ---- */
-const BRAIN_IC={claude:"spark",agy:"bolt",local:"cpu"};
+const BRAIN_IC={kimi:"spark",agy:"bolt",local:"cpu"};
 const SLOW_BRAINS=new Set(["local"]);  /* carga un modelo en la GPU: la primera respuesta tarda */
 const MODES={ask:{lbl:"Leer",ic:"ask",hint:"Leer: solo mira y planifica; no toca nada del PC.",cls:""},
   do:{lbl:"Actuar",ic:"tool",hint:"Actuar: hace cambios en el PC sin pedir permisos. Te pediré confirmación.",cls:"hz"}};
 registerWidget({id:"chat",title:"Conversación",icon:"chat",area:"chat",
   render(body,ctx,extra){
-    let brains=[],brain=LS.get("jv_brain","claude"),mode=LS.get("jv_mode","ask");if(!MODES[mode])mode="ask";
+    let brains=[],brain=LS.get("jv_brain","kimi"),mode=LS.get("jv_mode","ask");if(!MODES[mode])mode="ask";
     const rb=h("button",{class:"btn sm icon ghost",type:"button","aria-label":"Comprobar cerebros disponibles"},icon("refresh"));extra.append(rb);
     const bwrap=h("div",{class:"brains",role:"radiogroup","aria-label":"Cerebro"});
     const bnote=h("div",{class:"bnote"},h("span",{class:"bdot","aria-hidden":"true"}),h("span"));
@@ -1365,7 +1365,7 @@ registerWidget({id:"chat",title:"Conversación",icon:"chat",area:"chat",
     async function loadBrains(){bwrap.textContent="";for(let i=0;i<3;i++)bwrap.append(h("span",{class:"skl",style:"height:40px;width:110px;flex:none;border-radius:14px"}));rb.disabled=true;
       try{const j=await api("/api/modelos");brains=(Array.isArray(j.backends)?j.backends:[]).filter(b=>b&&b.id);}
       catch(e){if(e instanceof AuthErr)return;brains=[];toast("No se pudo consultar los cerebros: "+errText(e),"warn");}
-      if(!brains.length)brains=[{id:"claude",nombre:"Claude",ok:true,nota:"Lista de cerebros no disponible; uso el predeterminado."}];
+      if(!brains.length)brains=[{id:"kimi",nombre:"Kimi",ok:true,nota:"Lista de cerebros no disponible; uso el predeterminado."}];
       renderBrains();rb.disabled=false;}
     rb.onclick=loadBrains;loadBrains();
     /* estado vacío con sugerencias */

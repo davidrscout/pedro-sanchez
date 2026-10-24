@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Herramientas propias de Pedro como servidor MCP (stdio). Lo arranca Claude Code con --mcp-config (ver jarvis.py).
+"""Herramientas propias de Pedro como servidor MCP (stdio). Lo arranca Kimi Code (ver jarvis.py).
 Idea de adewaskar/jarvis (createSdkMcpServer) y OpenJarvis (tools/ + mcp/).
 
 PEDRO_MODO=ask -> solo herramientas de lectura + memoria + agenda + aviso a Telegram (no tocan el PC).

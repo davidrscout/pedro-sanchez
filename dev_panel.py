@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """Servidor de DESARROLLO del panel: datos falsos, sin túnel, sin tocar el PC. Para diseñar la interfaz.
-   python dev_panel.py   -> imprime un enlace http://127.0.0.1:18777/t/... (PIN 2404, alta 12345678, vale 24 h). Recarga ui\*.html al vuelo."""
+   python dev_panel.py   -> imprime un enlace http://127.0.0.1:18777/t/... (PIN 2404, alta 12345678, hasta /caducar). Recarga ui/*.html al vuelo."""
 import os, secrets, tempfile, threading, time, io
 from pathlib import Path
 import webpanel as w
 
 w.STATE_F, w.LOCK_F, w.PORT = Path(tempfile.mkdtemp()) / "st.json", Path(tempfile.mkdtemp()) / "LOCKED", 18777
-w.TOKEN_TTL, w.NONCE_TTL, w.SESSION_IDLE, w.SESSION_MAX = 86400, 86400, 86400, 86400
+w.NONCE_TTL, w.SESSION_IDLE, w.SESSION_MAX = 86400, 86400, 86400
 state = {"cpu": 12}
 
 def estado():

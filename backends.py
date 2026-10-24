@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Cerebros alternativos de Pedro Sánchez: agy (Antigravity), OpenCode+Qwen local y chat directo con la IA local.
-Claude Code vive en jarvis.py. Todos los modos: 'ask' = solo lectura/plan; 'do' = SIN pedir permisos (decisión de David)."""
+Kimi Code vive en jarvis.py. Todos los modos: 'ask' = solo lectura/plan; 'do' = SIN pedir permisos (decisión de David)."""
 import json
 import os
 import re
@@ -19,7 +19,7 @@ OPENCODE_CFG = LLM / "opencode" / "opencode.json"
 DEFAULT_MODEL = LLM / "models" / "Huihui-Qwen3.8-27B-abliterated-UD-IQ4_XS.gguf"
 PORT = 8090
 AGY = shutil.which("agy") or str(Path(os.environ.get("LOCALAPPDATA", "")) / "agy" / "bin" / "agy.exe")
-CLAUDE = shutil.which("claude") or r"C:\Users\ADMIN\.local\bin\claude.exe"
+KIMI = shutil.which("kimi") or str(Path(os.environ.get("USERPROFILE", "")) / ".kimi-code" / "bin" / "kimi.exe")
 
 CFG = {}
 WORK = Path(".")
@@ -173,7 +173,7 @@ def run_agy(prompt, mode="ask"):
         if j.get("denied_actions"):
             log(f"agy ask sin respuesta: denegado {j.get('denied_actions')}")
             return ("Antigravity en modo «leer» no puede ejecutar nada en el PC sin pedir permiso, y desde aquí "
-                    "no puede pedirlo. Para que mire ficheros o el sistema, usa el modo «actuar» o elige Claude.")
+                    "no puede pedirlo. Para que mire ficheros o el sistema, usa el modo «actuar» o elige Kimi.")
         return f"(agy sin respuesta: {j.get('status') or 'desconocido'})"
     return out or "(agy sin respuesta)"
 
@@ -183,7 +183,7 @@ def estado():
     modelo = local_model()
     local_ok = SERVER_EXE.exists() and modelo.exists()
     return [
-        {"id": "claude", "nombre": "Claude Code", "ok": Path(CLAUDE).exists(), "nota": "Lectura / completo"},
+        {"id": "kimi", "nombre": "Kimi Code", "ok": Path(KIMI).exists(), "nota": "Lectura / completo"},
         {"id": "agy", "nombre": "Antigravity (agy)", "ok": Path(AGY).exists(), "nota": "Plan / completo"},
         {"id": "local", "nombre": "IA local (chat)", "ok": local_ok, "nota": "Opcional; usa la GPU"},
     ]

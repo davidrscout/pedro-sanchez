@@ -352,7 +352,7 @@ setInterval(() => { if (document.hidden || Session.dead) return; const el = $("f
 
 /* =============================== HABLAR =============================== */
 const Chat = (() => {
-  let cerebros = [], cerebro = LS.get("jv_brain", "claude"), modo = LS.get("jv_mode", "ask") === "do" ? "do" : "ask", cargado = false;
+  let cerebros = [], cerebro = LS.get("jv_brain", "kimi"), modo = LS.get("jv_mode", "ask") === "do" ? "do" : "ask", cargado = false;
   const box = $("cerebros"), ta = $("ta"), env = $("enviar"), log = $("log"), vacio = $("vacio"), comp = $("comp");
   const HINT = { ask: "Leer: solo mira y planifica; no toca nada del PC.", do: "Actuar: hace cambios en el PC sin pedir permisos. Antes te pediré levantar la tapa roja." };
   const nombre = id => { const b = cerebros.find(x => x.id === id); return b ? String(b.nombre || id).replace(/\s*\(.*\)\s*$/, "") : id; };
@@ -391,7 +391,7 @@ const Chat = (() => {
     box.textContent = ""; for (let i = 0; i < 3; i++) box.append(h("button", { type: "button", disabled: true, "aria-label": "Cargando" }, h("b", { text: "…" }), h("span", { text: "consultando" })));
     try { const j = await api("/api/modelos"); cerebros = (Array.isArray(j.backends) ? j.backends : []).filter(b => b && b.id); }
     catch (e) { if (e instanceof AuthErr) return; cerebros = []; toast("No se pudo consultar quién está disponible: " + errText(e), "warn"); }
-    if (!cerebros.length) cerebros = [{ id: "claude", nombre: "Claude Code", ok: true, nota: "Lista no disponible; uso el predeterminado." }];
+    if (!cerebros.length) cerebros = [{ id: "kimi", nombre: "Kimi Code", ok: true, nota: "Lista no disponible; uso el predeterminado." }];
     if (!cerebros.some(b => b.id === cerebro && b.ok !== false)) { const f = cerebros.find(b => b.ok !== false); cerebro = f ? f.id : cerebro; }
     pintaCerebros(); cargado = true;
   }

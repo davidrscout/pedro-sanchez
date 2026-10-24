@@ -3,8 +3,8 @@
 
 Diseño: sin Administrador, sin --dangerously-skip-permissions, sin túnel público.
   - Comandos propios (/estado, /captura, /bloquear...) = funciones fijas, no pasan por el modelo.
-  - Texto libre = Claude Code en modo SOLO LECTURA.
-  - /hacer <tarea> = Claude Code con herramientas, pero SOLO tras pulsar "Sí" en un botón.
+  - Texto libre = Kimi Code en modo SOLO LECTURA.
+  - /hacer <tarea> = Kimi Code con herramientas, pero SOLO tras pulsar "Sí" en un botón.
 Solo obedece al usuario de Telegram JARVIS_ALLOWED_ID; al resto lo ignora (y apunta su id en el log).
 """
 import ctypes
@@ -71,7 +71,7 @@ TOKEN = CFG.get("JARVIS_BOT_TOKEN", "")
 ALLOWED = int(CFG.get("JARVIS_ALLOWED_ID", "0") or 0)
 TG_CONTROL = CFG.get("JARVIS_TELEGRAM_CONTROL", "0") == "1"  # Telegram NO es de fiar (cuenta compartida): apagado por defecto
 API = f"https://api.telegram.org/bot{TOKEN}/"
-CLAUDE = shutil.which("claude") or r"C:\Users\ADMIN\.local\bin\claude.exe"
+KIMI = shutil.which("kimi") or str(Path(os.environ.get("USERPROFILE", "")) / ".kimi-code" / "bin" / "kimi.exe")
 
 # ---------------------------------------------------------------- Telegram
 def tg(method, data=None, files=None, timeout=15):
@@ -193,14 +193,13 @@ def reinicio_inesperado():
     return n.isdigit() and int(n) > 0
 
 
-# ---------------------------------------------------------------- cerebro (Claude Code)
+# ---------------------------------------------------------------- cerebro (Kimi Code)
 BRAIN_LOCK = threading.Lock()
 BRAIN = {"proc": None, "parado": False}
-ASK_TOOLS = "Read,Glob,Grep,WebSearch,WebFetch,mcp__pedro"
-ASK_DENY = "Bash,PowerShell,Edit,Write,NotebookEdit,Read(//c/Dev/Jarvis/.env)"
-DO_TOOLS = "Read,Glob,Grep,Edit,Write,Bash,PowerShell,WebSearch,WebFetch,mcp__pedro"
-DO_DENY = ("Read(//c/Dev/Jarvis/.env),Edit(//c/Dev/Jarvis/.env),Bash(rm -rf:*),Bash(del /s:*),Bash(format:*),Bash(shutdown:*),Bash(reg delete:*),Bash(diskpart:*),"
-           "PowerShell(Remove-Item -Recurse:*),PowerShell(Stop-Computer:*),PowerShell(Restart-Computer:*)")
+ASK_TOOLS = ("Read", "ReadMediaFile", "Glob", "Grep", "WebSearch", "FetchURL", "mcp__pedro__*")
+DO_TOOLS = ("Read", "ReadMediaFile", "Glob", "Grep", "Edit", "Write", "Bash", "WebSearch", "FetchURL", "mcp__pedro__*")
+DO_DENY = """No leas ni modifiques .env ni otros secretos. No ejecutes comandos destructivos o que apaguen el sistema:
+rm -rf, del /s, format, shutdown, reg delete, diskpart, Remove-Item -Recurse, Stop-Computer ni Restart-Computer."""
 PROMPT_SESION = HOME / "_prompt_sesion.md"
 TELEMETRIA = HOME / "telemetria.jsonl"
 PYW = Path(sys.executable).with_name("pythonw.exe")
@@ -217,12 +216,29 @@ HERRAMIENTAS = """
 """
 
 
-def mcp_config(mode):
-    """Config MCP con SOLO el servidor de Pedro (--strict-mcp-config: ningún otro MCP del usuario entra aquí)."""
-    f = HOME / f"_mcp_{mode}.json"
+def mcp_config(mode, work):
+    """Configura el MCP de Pedro en la carpeta de trabajo; el agente solo expone mcp__pedro__*."""
+    d = work / ".kimi-code"
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / "mcp.json"
     exe = str(PYW if PYW.exists() else Path(sys.executable))
     cfg = {"mcpServers": {"pedro": {"command": exe, "args": [str(HOME / "pedro_mcp.py")], "env": {"PEDRO_MODO": mode}}}}
     txt = json.dumps(cfg, indent=1)
+    if not f.exists() or f.read_text(encoding="utf-8") != txt:
+        f.write_text(txt, encoding="utf-8")
+    return f
+
+
+def agent_config(mode):
+    """Agente de Kimi con las herramientas permitidas para este modo, no solo una instrucción de texto."""
+    d = HOME / ".kimi-code" / "agents"
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / f"pedro-{mode}.md"
+    tools = ASK_TOOLS if mode == "ask" else DO_TOOLS
+    base = SYSTEM_FILE.read_text(encoding="utf-8") if SYSTEM_FILE.exists() else ""
+    reglas = "Modo Leer: no cambies nada del PC ni ejecutes comandos; solo consulta y propón." if mode == "ask" else DO_DENY
+    txt = ("---\nname: pedro-" + mode + "\ndescription: Pedro Sánchez en modo " + mode + "\ntools:\n"
+           + "".join(f"  - {t}\n" for t in tools) + "---\n${base_prompt}\n\n" + base + "\n\n" + HERRAMIENTAS + "\n\n" + reglas)
     if not f.exists() or f.read_text(encoding="utf-8") != txt:
         f.write_text(txt, encoding="utf-8")
     return f
@@ -238,11 +254,16 @@ def prompt_sesion():
     return PROMPT_SESION
 
 
+def _estado_nuevo():
+    return {"session": str(uuid.uuid4()), "started": False, "engine": "kimi", "mode": None, "kimi_session": None}
+
+
 def load_state():
     try:
-        return json.loads(STATE.read_text(encoding="utf-8"))
+        st = json.loads(STATE.read_text(encoding="utf-8"))
+        return st if st.get("engine") == "kimi" else _estado_nuevo()
     except Exception:
-        return {"session": str(uuid.uuid4()), "started": False}
+        return _estado_nuevo()
 
 
 def save_state(s):
@@ -250,7 +271,7 @@ def save_state(s):
 
 
 def nueva_conversacion():
-    save_state({"session": str(uuid.uuid4()), "started": False})
+    save_state(_estado_nuevo())
     return "Conversación nueva: Pedro empieza de cero (lo que recuerda a largo plazo se conserva)."
 
 
@@ -264,13 +285,10 @@ def parar_cerebro():
     return "Parado."
 
 
-def _telemetria(mode, j, segs):
+def _telemetria(mode, segs, error=False):
     try:
-        u = j.get("usage") or {}
         reg = {"t": time.strftime("%Y-%m-%d %H:%M:%S"), "modo": mode, "s": round(segs, 1),
-               "turnos": j.get("num_turns"), "error": bool(j.get("is_error")),
-               "tok_in": (u.get("input_tokens") or 0) + (u.get("cache_read_input_tokens") or 0) + (u.get("cache_creation_input_tokens") or 0),
-               "tok_out": u.get("output_tokens")}
+               "turnos": None, "error": error, "tok_in": None, "tok_out": None}
         with open(TELEMETRIA, "a", encoding="utf-8") as f:
             f.write(json.dumps(reg) + "\n")
     except Exception:
@@ -302,41 +320,75 @@ def _matar_arbol(p):
     subprocess.run(["taskkill", "/T", "/F", "/PID", str(p.pid)], capture_output=True, creationflags=NOWIN)
 
 
-# Coste CERO (decisión de David 04/10): Claude Code va SIEMPRE con la suscripción de claude.ai. Si alguna vez aparece una
-# clave de API o un proveedor de pago en el entorno, se quita antes de lanzar el cerebro para que nunca facture por uso.
+# Kimi usa su propia configuración; no le propagamos claves de API sueltas del entorno.
 PAGO_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_BASE_URL", "OPENAI_API_KEY", "OPENROUTER_API_KEY")
+            "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_BASE_URL", "OPENAI_API_KEY", "OPENROUTER_API_KEY",
+            "KIMI_API_KEY", "KIMI_MODEL_API_KEY")
 
 
-def env_sin_pago():
-    return {k: v for k, v in os.environ.items() if k.upper() not in PAGO_ENV}
+def env_kimi():
+    env = {k: v for k, v in os.environ.items() if k.upper() not in PAGO_ENV}
+    env["KIMI_CODE_TRUST_WORKSPACE"] = "1"
+    env["KIMI_CODE_BACKGROUND_PRINT_BACKGROUND_MODE"] = "exit"
+    env["KIMI_CODE_NO_AUTO_UPDATE"] = "1"
+    env["KIMI_CODE_WATCH"] = "0"
+    env["PEDRO_KIMI_GUARD"] = "1"
+    env["KIMI_CODE_IDENTITY_NAME"] = "Pedro Sánchez"
+    env["KIMI_CODE_IDENTITY_SLUG"] = "pedro-sanchez"
+    return env
 
 
-def run_claude(prompt, mode, efimera=False):
-    """efimera=True: conversación aparte que no toca la de David (tareas programadas)."""
-    st = {"session": str(uuid.uuid4()), "started": False} if efimera else load_state()
+def _salida_kimi(out):
+    textos, errores = [], []
+    session_id = None
+    for line in out.splitlines():
+        try:
+            j = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(j, dict):
+            continue
+        if j.get("role") == "assistant" and j.get("content"):
+            textos.append(str(j["content"]).strip())
+        if j.get("type") == "session.resume_hint" and j.get("session_id"):
+            session_id = str(j["session_id"])
+        if j.get("is_error") or j.get("role") == "error" or j.get("type") == "error":
+            errores.append(str(j.get("content") or j.get("error") or j))
+    return textos, session_id, errores
+
+
+def run_kimi(prompt, mode, efimera=False):
+    """efimera=True: conversación y carpeta aparte que no tocan la sesión de David."""
+    if mode not in ("ask", "do"):
+        mode = "ask"
+    st = _estado_nuevo() if efimera else load_state()
     for attempt in (1, 2):
-        flag = ["--resume", st["session"]] if st["started"] else ["--session-id", st["session"]]
-        args = [CLAUDE, "-p", "--output-format", "json", "--append-system-prompt-file", str(prompt_sesion()),
-                "--mcp-config", str(mcp_config(mode)), "--strict-mcp-config"] + flag
-        if CFG.get("JARVIS_MODELO"):          # p. ej. sonnet / opus / haiku; vacío = el de por defecto de Claude Code
-            args += ["--model", CFG["JARVIS_MODELO"]]
-        if mode == "ask":
-            args += ["--allowedTools", ASK_TOOLS, "--disallowedTools", ASK_DENY]
+        reanudar = not efimera and st["started"] and st.get("mode") == mode and bool(st.get("kimi_session"))
+        work = WORK
+        if efimera:
+            work = WORK / "_efimera" / st["session"]
+            work.mkdir(parents=True, exist_ok=True)
+        mcp_config(mode, work)
+        args = [KIMI, "--output-format", "stream-json"]
+        if reanudar:
+            args += ["--session", st["kimi_session"]]
         else:
-            # /hacer: SIN preguntar permisos (decisión de David 03/10). Se mantienen solo las negativas explícitas
-            # de DO_DENY (proteger .env y órdenes que destruyen el sistema).
-            args += ["--dangerously-skip-permissions", "--disallowedTools", DO_DENY]
+            args += ["--agent-file", str(agent_config(mode))]
+        if CFG.get("JARVIS_MODELO"):
+            args += ["--model", CFG["JARVIS_MODELO"]]
+        contexto = prompt_sesion().read_text(encoding="utf-8")
+        args += ["-p", contexto + "\n\n## Mensaje de David\n" + prompt]
         t0 = time.time()
         BRAIN["parado"] = False
-        p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                             cwd=str(WORK), creationflags=NOWIN, env=env_sin_pago())
+        p = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             cwd=str(work), creationflags=NOWIN, env=env_kimi())
         BRAIN["proc"] = p
         try:
-            raw_out, raw_err = p.communicate(prompt.encode("utf-8"), timeout=900)
+            raw_out, raw_err = p.communicate(timeout=900)
         except subprocess.TimeoutExpired:
             _matar_arbol(p)
             p.communicate()
+            _telemetria(mode, time.time() - t0, True)
             return "Se me acabó el tiempo (15 min). La tarea se ha cancelado."
         finally:
             BRAIN["proc"] = None
@@ -344,38 +396,35 @@ def run_claude(prompt, mode, efimera=False):
             return "Vale, paro."
         out = raw_out.decode("utf-8", errors="replace").strip()
         err = raw_err.decode("utf-8", errors="replace").strip()
-        try:
-            j = json.loads(out)
-        except Exception:
-            j = None
-        if isinstance(j, dict):
-            _telemetria(mode, j, time.time() - t0)
-        else:
-            j = None
-        if p.returncode == 0 and j is not None and not j.get("is_error"):
+        textos, session_id, errores = _salida_kimi(out)
+        if p.returncode == 0 and not errores:
             if not efimera:
-                st["started"] = True
+                st["started"] = bool(session_id)
+                st["mode"] = mode
+                st["kimi_session"] = session_id
                 save_state(st)
-            return (j.get("result") or "").strip()
-        if attempt == 1 and st["started"]:  # sesión perdida: empezar otra
-            st = {"session": str(uuid.uuid4()), "started": False}
+            _telemetria(mode, time.time() - t0)
+            return textos[-1] if textos else "(sin respuesta)"
+        if attempt == 1 and reanudar:
+            st = _estado_nuevo()
             continue
-        detalle = (j or {}).get("result") or err or out
-        log(f"claude rc={p.returncode} err={str(detalle)[:300]}")
+        detalle = "; ".join(errores) or err or out
+        _telemetria(mode, time.time() - t0, True)
+        log(f"kimi rc={p.returncode} err={str(detalle)[:300]}")
         return f"El cerebro falló (código {p.returncode}). {str(detalle)[:300]}"
     return "El cerebro no respondió."
 
 
-def brain_sync(prompt, mode, backend="claude"):
+def brain_sync(prompt, mode, backend="kimi"):
     """Un solo cerebro a la vez. mode: 'ask' (solo lectura/plan) o 'do' (SIN pedir permisos).
-    backend: claude | agy | local."""
+    backend: kimi | agy | local."""
     if mode not in ("ask", "do"):
         mode = "ask"
     if not BRAIN_LOCK.acquire(blocking=False):
         return "Sigo con la tarea anterior, espera a que termine."
     try:
-        if backend == "claude":
-            return run_claude(prompt, mode) or "(sin respuesta)"
+        if backend == "kimi":
+            return run_kimi(prompt, mode) or "(sin respuesta)"
         if backend == "agy":
             return backends.run_agy(prompt, mode)
         if backend == "local":
@@ -467,17 +516,13 @@ def send_web_link(chat, user_msg_id, code=""):
         else:
             send_text(chat, err)
         return
-    texto = "🔐 Enlace de un solo uso (60 s):\n" + url
+    texto = "🔐 Enlace activo hasta que mandes /caducar:\n" + url
     body = {"chat_id": chat, "message_id": mid, "text": texto,
             "link_preview_options": json.dumps({"is_disabled": True})}
-    if mid and tg("editMessageText", data=body):
-        schedule_delete(chat, mid, 60)
-    else:
-        sent = tg("sendMessage", data={"chat_id": chat, "text": texto,
-                                       "link_preview_options": json.dumps({"is_disabled": True}),
-                                       "protect_content": True})
-        if sent:
-            schedule_delete(chat, sent["message_id"], 60)
+    if not (mid and tg("editMessageText", data=body)):
+        tg("sendMessage", data={"chat_id": chat, "text": texto,
+                                "link_preview_options": json.dumps({"is_disabled": True}),
+                                "protect_content": True})
 
 
 def brain_async(chat, prompt, mode):
@@ -487,7 +532,7 @@ def brain_async(chat, prompt, mode):
             return
         try:
             send_text(chat, "Pensando..." if mode == "ask" else "Ejecutando...")
-            send_text(chat, run_claude(prompt, mode) or "(sin respuesta)")
+            send_text(chat, run_kimi(prompt, mode) or "(sin respuesta)")
         except Exception as e:
             log(f"brain error {type(e).__name__}")
             send_text(chat, "Error interno en el cerebro.")
@@ -548,7 +593,7 @@ def _disparar_tarea(it):
         try:
             pr = ("[Tarea programada por David; contesta para leer en el móvil, breve y al grano. Usa tus herramientas "
                   "para comprobar datos reales.]\n" + it["texto"])
-            res = run_claude(pr, "ask", efimera=True)
+            res = run_kimi(pr, "ask", efimera=True)
             send_text(ALLOWED, f"⏰ {it['texto'][:80]}\n\n{res}")
         except Exception as e:
             log(f"tarea programada error {type(e).__name__}")
@@ -628,7 +673,8 @@ AYUDA = """PEDRO SÁNCHEZ - PC limpio
 /ahorro - bloquea + apaga monitor (el PC sigue encendido y escuchando)
 /vol up|down|mute
 /abrir chrome|steam|spotify|discord
-/hacer <tarea> - Claude Code con herramientas (pide confirmación)
+/hacer <tarea> - Kimi Code con herramientas (pide confirmación)
+/caducar - anula el enlace del panel
 /parar - corta lo que esté haciendo Pedro · /nueva - conversación desde cero
 /memoria · /olvidar <id> · /agenda · /stats
 /apagar - apagado completo (confirmación) · /reiniciar · /cancelar
@@ -655,6 +701,12 @@ def handle_update(u):
         return
     if re.fullmatch(r"\d{3}\s?\d{3}", text):   # solo el código de 6 dígitos = petición del enlace (sin "/web")
         threading.Thread(target=send_web_link, args=(chat, m.get("message_id"), text.replace(" ", "")), daemon=True).start()
+        return
+    if (text.split() or [""])[0].lower().split("@")[0] == "/caducar":
+        if webpanel.revoke_link():
+            send_text(chat, "Enlace anulado. Las sesiones ya abiertas siguen su caducidad normal.")
+        else:
+            send_text(chat, "No había ningún enlace activo.")
         return
     if not TG_CONTROL:
         send_text(chat, "Control por Telegram desactivado. Manda el código de tu Authenticator (6 dígitos).")
@@ -793,6 +845,15 @@ def selftest():
     assert not sent, "¡un usuario no autorizado obtuvo respuesta!"
     handle_update({"message": {"from": {"id": 111}, "chat": {"id": 111}, "text": "/estado"}})
     handle_update({"message": {"from": {"id": 111}, "chat": {"id": 111}, "text": "/hacer crear un archivo"}})
+    revocar_original = webpanel.revoke_link
+    webpanel.revoke_link = lambda: True
+    globals()["TG_CONTROL"] = False
+    try:
+        handle_update({"message": {"from": {"id": 111}, "chat": {"id": 111}, "text": "/caducar"}})
+    finally:
+        webpanel.revoke_link = revocar_original
+        globals()["TG_CONTROL"] = True
+    assert any("Enlace anulado" in str(v) for k, _, v in sent if k == "txt"), "/caducar no funciona con TG_CONTROL desactivado"
     handle_update({"message": {"from": {"id": 111}, "chat": {"id": 111}, "text": "/loquesea"}})
     print("\nrespuestas simuladas:", [(k, str(v)[:40]) for k, _, v in sent])
     print("PENDING tras /hacer:", len(PENDING), "(debe ser 1)")

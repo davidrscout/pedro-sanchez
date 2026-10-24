@@ -16,6 +16,7 @@ _mcp_*.json
 __pycache__/
 .pytest_cache/
 workspace/
+.kimi-code/
 *.bak_*
 *.bak
 # Maquetas y versiones antiguas de la interfaz (224 MB)

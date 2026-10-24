@@ -18,8 +18,8 @@ w.H.update({"log": lambda m: None, "alert": lambda m: called.append(("alert", m)
             "estado": lambda: "CPU ok", "eventos": lambda: "sin eventos", "captura": lambda: b"\xff\xd8JPEG",
             "bloquear": lambda: called.append("lock"), "pantalla": lambda: None, "ahorro": lambda: None,
             "vol": lambda a: None, "abrir": lambda a: "ok", "power": lambda k: called.append(("power", k)) or "hecho",
-            "brain": lambda p, m, b="claude": f"resp[{b}/{m}]:{p}",
-            "backends": lambda: [{"id": "claude", "nombre": "Claude", "ok": True, "nota": ""}],
+            "brain": lambda p, m, b="kimi": f"resp[{b}/{m}]:{p}",
+            "backends": lambda: [{"id": "kimi", "nombre": "Kimi", "ok": True, "nota": ""}],
             "watchdog": lambda: {"activo": True, "latido_s": 3, "tarea": "Running", "sesiones": 1, "ultima": None, "hoy": None, "eventos": []},
             "serie": lambda: {"desde": 0, "paso_s": 300, "puntos": [None, {"t": 40.0, "u": 10, "c": 5}], "cortes": [], "muestras": 1},
             "procesos": lambda: {"total": 1, "top": [{"pid": 4, "name": "x.exe", "cpu": 0, "mem_mb": 1, "protegido": False}], "ventanas": []},
@@ -69,7 +69,9 @@ def login(nonce, pin, enroll=None, dev=None, ip=None):
 
 
 def fresh_state():
-    w.save_state({"ips": {}, "recent": [], "pause_until": 0})
+    w.save_state({"ips": {}, "recent": [], "pause_until": 0, "active_link": None})
+    w.TOKENS.clear()
+    w.NONCES.clear()
     w.LOCK_F.unlink(missing_ok=True)
 
 
@@ -86,7 +88,7 @@ def enroll_device():
 
 # ---------------------------------------------------------------- básicos
 ok(requests.get(f"{B}/t/inventado").status_code == 404, "token inventado -> 404")
-ok(requests.get(f"{B}/t/{mk_token(70)}").status_code == 404, "token de 70 s (caducado) -> 404")
+ok(requests.get(f"{B}/t/{mk_token(70)}").status_code == 200, "token de 70 s sigue válido hasta revocarlo")
 ok(requests.get(f"{B}/app", allow_redirects=False).status_code == 302, "/app sin sesión -> redirige")
 ok(requests.get(f"{B}/", headers={"Host": "malo.com"}).status_code == 421, "Host ajeno -> 421")
 ok(requests.post(f"{B}/api/estado").status_code in (403, 421), "api sin cabecera/cookie -> rechazada")
@@ -149,7 +151,7 @@ requests.post(f"{B}/api/apagar", cookies=ck, headers=hd, json={"confirm": True})
 ok(("power", "apagar") in called, "apagar con confirm:true sí se ejecuta")
 ok(requests.post(f"{B}/api/hacer", cookies=ck, headers=hd, json={"prompt": "x"}).status_code == 400, "/hacer sin confirmación -> 400")
 r = requests.post(f"{B}/api/preguntar", cookies=ck, headers=hd, json={"prompt": "hola"}); jid = r.json()["job"]; time.sleep(0.5)
-ok("resp[claude/ask]:hola" in requests.get(f"{B}/api/job/{jid}", cookies=ck).json()["text"], "pregunta -> trabajo asíncrono con respuesta")
+ok("resp[kimi/ask]:hola" in requests.get(f"{B}/api/job/{jid}", cookies=ck).json()["text"], "pregunta -> trabajo asíncrono con respuesta")
 r = requests.post(f"{B}/api/agy", cookies=ck, headers=hd, json={"prompt": "hola", "confirm": True}); jid = r.json()["job"]; time.sleep(0.5)
 ok("resp[agy/do]" in requests.get(f"{B}/api/job/{jid}", cookies=ck).json()["text"], "acción antigua agy -> cerebro agy en modo actuar")
 ok(requests.post(f"{B}/api/inexistente", cookies=ck, headers=hd).status_code == 404, "acción desconocida -> 404")
@@ -159,7 +161,7 @@ ok(requests.post(f"{B}/api/estado", cookies=ck, headers=hd).status_code == 200, 
 
 # ---------------------------------------------------------------- API nueva
 def api(a, body=None): return requests.post(f"{B}/api/{a}", cookies=ck, headers=hd, json=body or {})
-ok(api("modelos").json()["backends"][0]["id"] == "claude", "modelos")
+ok(api("modelos").json()["backends"][0]["id"] == "kimi", "modelos")
 ok(api("watchdog").json()["activo"] is True, "watchdog")
 ok(api("serie").json()["puntos"][1]["t"] == 40.0, "serie (historial del vigilante)")
 ok(api("procesos").json()["top"][0]["pid"] == 4, "procesos")
@@ -186,6 +188,28 @@ ok(L.ejecutar("vps_gemsy_reiniciar", confirm=False)["text"] == "Hace falta confi
 ok(L.ejecutar("no_existe")["text"] == "Lanzador desconocido.", "lanzador inexistente")
 w.SESS["last"] -= 50000
 ok(requests.post(f"{B}/api/estado", cookies=ck, headers=hd).status_code == 401, "sesión inactiva >12 h caduca")
+
+# ---------------------------------------------------------------- enlace persistente y revocación manual
+fresh_state()
+tok = mk_token(3600)
+ok(page(tok, dev=DEV)[0].status_code == 200, "un enlace de 1 h sigue vivo")
+r, n = page(tok, dev=DEV)
+ok(login(n, "2404", dev=DEV).status_code == 200, "login con el enlace persistente")
+ok(page(tok, dev=DEV)[0].status_code == 200, "el enlace NO muere tras el primer login")
+ok(w.revoke_link() is True, "/caducar revoca un enlace activo")
+ok(page(tok, dev=DEV)[0].status_code == 404, "tras /caducar el enlace da 404")
+ok(w.revoke_link() is False, "/caducar sin enlace activo avisa de que no había ninguno")
+
+fresh_state()
+tok = mk_token()
+w.save_active_link(tok, time.time())
+w.TOKENS.clear()
+w.restore_link()
+ok(page(tok, dev=DEV)[0].status_code == 200, "el enlace activo se restaura tras reiniciar")
+w.revoke_link()
+w.TOKENS.clear()
+w.restore_link()
+ok(tok not in w.TOKENS, "un enlace revocado NO resucita al reiniciar")
 
 # ---------------------------------------------------------------- bloqueo por IP (no del panel entero)
 fresh_state()

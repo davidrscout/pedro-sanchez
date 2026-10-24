@@ -188,7 +188,7 @@ h1{margin:0;font-weight:300;font-size:clamp(19px,5.4vw,28px);letter-spacing:.34e
 <main class="stage" id="stage">
   <div class="top enter">
     <span class="chip"><span class="dot" aria-hidden="true"></span>PC LIMPIO</span>
-    <span class="chip lnk" id="lnk" title="Tiempo orientativo del enlace">Enlace · <span id="lnkT">1:00</span></span>
+    <span class="chip lnk" id="lnk" title="El enlace se anula desde Telegram">Enlace activo hasta /caducar</span>
   </div>
 
   <div class="center">
@@ -221,7 +221,7 @@ const NEEDS_ENROLL = "__ENROLL__" === "1";
 const $=id=>document.getElementById(id);
 const RM=matchMedia("(prefers-reduced-motion: reduce)");
 const TOUCH=matchMedia("(pointer: coarse)").matches;
-const MAXLEN=12, LINK_S=60;
+const MAXLEN=12;
 /* "pin" es el búfer del paso activo (código de 8 o PIN); "code" guarda el código ya tecleado. Nada sale de aquí hasta el envío. */
 let pin="", code="", step=NEEDS_ENROLL?"code":"pin", busy=false, locked=false, done=false;
 const CODE_LEN=8;
@@ -428,17 +428,6 @@ function granted(enrolled){
   setTimeout(()=>{$("stage").classList.add("leave");},780);
   setTimeout(go,1350);
 }
-
-/* ------------------------------ Cuenta atrás informativa del enlace ------------------------------ */
-(function(){const t0=performance.now(),lnk=$("lnk"),lt=$("lnkT"),cd=$("cd"),cdp=$("cdp");
-  function tick(){if(done)return;const left=Math.max(0,LINK_S-(performance.now()-t0)/1000),s=Math.ceil(left);
-    lt.textContent=Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
-    cdp.setAttribute("stroke-dashoffset",String(100-left/LINK_S*100));
-    const w=left<=10&&left>0;lnk.classList.toggle("warn",w);cd.classList.toggle("warn",w);
-    if(left<=0){lnk.classList.add("dead");cd.classList.add("dead");lt.textContent="caducado";
-      if(!locked&&!busy&&!msg.textContent)say("El enlace ha caducado. Si falla, pide otro con /web.");return;}
-    setTimeout(tick,250);}
-  tick();})();
 
 /* Página abierta sin pasar por el servidor (nonce sin sustituir) */
 if(nonce.indexOf("__NON"+"CE__")===0)lockPad("Abre esta página desde el enlace de /web.");

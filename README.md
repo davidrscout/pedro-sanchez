@@ -9,7 +9,7 @@
   <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white">
   <img alt="Windows" src="https://img.shields.io/badge/Windows-11-0078D4?logo=windows&logoColor=white">
   <img alt="Telegram" src="https://img.shields.io/badge/Telegram-bot-26A5E4?logo=telegram&logoColor=white">
-  <img alt="Claude Code" src="https://img.shields.io/badge/cerebro-Claude%20Code-D97757">
+  <img alt="Kimi Code" src="https://img.shields.io/badge/cerebro-Kimi%20Code-D97757">
   <img alt="Privado" src="https://img.shields.io/badge/c%C3%B3digo-privado-555">
 </p>
 
@@ -19,19 +19,19 @@
 
 ## Qué hace
 
-- **Habla con él**, por texto o por voz (dictado en el propio PC con Whisper local), y elige quién contesta: **Claude Code**, **Antigravity** o una **IA local**.
+- **Habla con él**, por texto o por voz (dictado en el propio PC con Whisper local), y elige quién contesta: **Kimi Code**, **Antigravity** o una **IA local**.
 - **Dos modos**: *Leer* (mira y propone, no toca nada) y *Actuar* (cambia cosas en el PC, siempre tras confirmar).
 - **Mando remoto desde el móvil**: pantalla en directo con touchpad, clics, teclado, volumen, bloquear, apagar o reiniciar.
 - **Pulso del PC**: temperatura y consumo de la gráfica, carga, reinicios del día.
 - **Vigilante**: avisa si la gráfica se calienta, si el disco se llena o si algo deja de responder.
 - **Memoria y agenda**: recuerda hechos, programa avisos y tareas.
 - **Lanzadores**: abre programas y webs con un toque, en el PC o en el móvil.
-- **Seguro**: solo obedece a tu cuenta de Telegram; el panel web necesita enlace de un solo uso, PIN y código TOTP; sin puertos abiertos (túnel de salida).
+- **Seguro**: solo obedece a tu cuenta de Telegram; el panel web necesita enlace (reutilizable hasta `/caducar`), PIN y código TOTP; sin puertos abiertos (túnel de salida).
 
 <table>
   <tr>
     <td width="50%"><img src="docs/hablar.jpg" alt="Hablar"><br><sub><b>Hablar</b>: toca y habla, o manos libres</sub></td>
-    <td width="50%"><img src="docs/conv.jpg" alt="Conversación"><br><sub><b>Conversación</b>: elige Claude Code, Antigravity o IA local, y si solo lee o actúa</sub></td>
+    <td width="50%"><img src="docs/conv.jpg" alt="Conversación"><br><sub><b>Conversación</b>: elige Kimi Code, Antigravity o IA local, y si solo lee o actúa</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/pantalla.jpg" alt="Pantalla"><br><sub><b>Pantalla</b> en directo y mando con touchpad</sub></td>
@@ -70,11 +70,14 @@
 ```bash
 python test_web.py        # panel: sesiones, PIN, TOTP, bloqueos, dictado
 python test_nuevo.py      # memoria, agenda y herramientas
+python test_kimi.py       # backend Kimi: permisos, sesiones y MCP (simulado)
+python test_kimi_guard.py # guarda de comandos prohibidos (sin ejecutarlos)
 python jarvis.py --selftest
 ```
 
 ## Notas
 
-- **Coste cero**: el cerebro usa la suscripción de claude.ai; antes de lanzar Claude Code se quita del entorno cualquier clave de API de pago.
-- **Antigravity**: en modo *Leer* no puede ejecutar comandos sin consola (los deniega solo), así que para que mire el PC hay que usar *Actuar* o elegir Claude.
+- **Kimi Code**: usa la cuenta y el modelo configurados en el CLI; el proyecto no guarda ninguna clave de Kimi.
+- **Comandos prohibidos**: `kimi_guard.py` los intercepta antes de `Bash` mediante un hook `PreToolUse` registrado en la configuración local de Kimi. Solo actúa cuando el proceso lleva `PEDRO_KIMI_GUARD=1`; los demás usos de Kimi no se ven afectados.
+- **Antigravity**: en modo *Leer* no puede ejecutar comandos sin consola (los deniega solo), así que para que mire el PC hay que usar *Actuar* o elegir Kimi.
 - Las variables del `.env` conservan el prefijo `JARVIS_` por compatibilidad.

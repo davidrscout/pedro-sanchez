@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Panel web de JARVIS. Solo escucha en 127.0.0.1; se publica con un túnel de Cloudflare TEMPORAL (solo salida).
 
-Flujo: /web en Telegram -> enlace de un solo uso (60 s) -> página de PIN -> sesión corta con cookie.
+Flujo: /web en Telegram -> enlace reutilizable hasta /caducar -> página de PIN -> sesión con cookie.
 Telegram NO es de fiar (cuenta compartida): lo único que protege es el PIN, con bloqueos duros.
 """
 import hashlib
@@ -27,7 +27,7 @@ ENROLL_F = HOME / "enroll.json"     # ventana de enrolamiento abierta desde el P
 NOWIN = 0x08000000
 CLOUDFLARED = shutil.which("cloudflared") or r"C:\Program Files (x86)\cloudflared\cloudflared.exe"
 
-TOKEN_TTL = 60          # s que vale el enlace
+TOKEN_TTL = float("inf")  # sin caducidad por tiempo: se revoca con /caducar, otro enlace o las reglas de seguridad
 NONCE_TTL = 120         # s para teclear el PIN tras abrir el enlace
 SESSION_IDLE = 43200     # 12 h sin actividad (uso remoto sin prisa)
 SESSION_MAX = 259200     # 3 días máximo absoluto
@@ -74,11 +74,44 @@ def load_state():
     st.setdefault("ips", {})        # ip -> {"fails": n, "blocked_until": ts}
     st.setdefault("recent", [])     # marcas de tiempo de fallos (todas las IPs) para la red de seguridad global
     st.setdefault("pause_until", 0)
+    st.setdefault("active_link", None)
     return st
 
 
 def save_state(s):
     STATE_F.write_text(json.dumps(s), encoding="utf-8")
+
+
+def save_active_link(tok, created=None):
+    with LOCKS["state"]:
+        st = load_state()
+        st["active_link"] = {"token": tok, "t": time.time() if created is None else created} if tok else None
+        save_state(st)
+
+
+def restore_link():
+    active = load_state().get("active_link") or {}
+    tok = active.get("token")
+    if tok and active.get("t"):
+        TOKENS[tok] = {"t": float(active["t"]), "fails": 0, "dead": False}
+
+
+def revoke_link(tok=None):
+    """Anula uno o todos los enlaces y sus nonces. Devuelve True si había alguno activo."""
+    changed = False
+    for k, v in TOKENS.items():
+        if (tok is None or k == tok) and not v["dead"]:
+            v["dead"] = True
+            changed = True
+    for n, v in list(NONCES.items()):
+        if tok is None or v["token"] == tok:
+            NONCES.pop(n, None)
+    active = load_state().get("active_link") or {}
+    if tok is None or active.get("token") == tok:
+        if active.get("token"):
+            changed = True
+        save_active_link(None)
+    return changed
 
 
 def lock_status():
@@ -299,10 +332,12 @@ def new_link():
         return None, "Demasiados enlaces en la última hora."
     LINK_TIMES.append(now)
     base = ensure_tunnel()
-    for k in [k for k, v in TOKENS.items() if now - v["t"] > TOKEN_TTL * 3]:
+    revoke_link()
+    for k in [k for k, v in TOKENS.items() if v["dead"] and now - v["t"] > 7 * 86400]:
         TOKENS.pop(k, None)
     tok = secrets.token_urlsafe(24)
     TOKENS[tok] = {"t": now, "fails": 0, "dead": False}
+    save_active_link(tok, now)
     log("enlace web generado")
     return f"{base}/t/{tok}", None
 
@@ -487,7 +522,6 @@ class Handler(BaseHTTPRequestHandler):
         if not known:
             enrolled_now = enroll_check(str(d.get("enroll", ""))[:16])
         if (known or enrolled_now) and pin_ok(pin):
-            t["dead"] = True
             register_ok(ip)
             SESS.update({"sid": secrets.token_urlsafe(32), "t0": now, "last": now})
             cookies = [f"sid={SESS['sid']}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age={SESSION_MAX}"]
@@ -501,12 +535,12 @@ class Handler(BaseHTTPRequestHandler):
         fails, blocked = register_fail(ip)
         log(f"PIN FALLIDO desde {ip} (IP {fails}/{IP_FAIL_LIMIT}, bloqueada={blocked})")
         if blocked:
-            t["dead"] = True
+            revoke_link(n["token"])
             H.get("alert", lambda m: None)(f"IP {ip} BLOQUEADA 24 h por 3 PIN fallidos en el panel.")
             return self._json(429, {"error": "PIN incorrecto 3 veces. Tu IP queda bloqueada 24 h."})
         H.get("alert", lambda m: None)(f"PIN fallido en el panel desde {ip} ({fails}/{IP_FAIL_LIMIT}).")
         if t["fails"] >= FAILS_PER_TOKEN:
-            t["dead"] = True
+            revoke_link(n["token"])
             return self._json(401, {"error": "PIN incorrecto. Enlace anulado; pide otro con /web."})
         left = IP_FAIL_LIMIT - fails
         nn = secrets.token_urlsafe(18)
@@ -645,12 +679,12 @@ class Handler(BaseHTTPRequestHandler):
                 if not prompt:
                     return self._json(400, {"error": "vacío"})
                 if action == "chat":
-                    backend, mode = str(d.get("backend", "claude")), ("do" if d.get("mode") == "do" else "ask")
+                    backend, mode = str(d.get("backend", "kimi")), ("do" if d.get("mode") == "do" else "ask")
                 else:
-                    backend, mode = ("agy", "do") if action == "agy" else ("claude", "do" if action == "hacer" else "ask")
+                    backend, mode = ("agy", "do") if action == "agy" else ("kimi", "do" if action == "hacer" else "ask")
                 if d.get("voz") is True:     # conversación hablada: respuesta corta y apta para leer en voz alta
                     prompt = VOZ_PREFIJO + prompt
-                if backend not in ("claude", "agy", "local"):
+                if backend not in ("kimi", "agy", "local"):
                     return self._json(400, {"error": "cerebro desconocido"})
                 if mode == "do" and d.get("confirm") is not True:
                     return self._json(400, {"error": "falta confirmación"})
@@ -744,6 +778,7 @@ def init(host_funcs, cfg):
     H.update(host_funcs)
     CFG.update(cfg)
     PORT = int(cfg.get("JARVIS_WEB_PORT", "18765"))
+    restore_link()
     threading.Thread(target=janitor, daemon=True).start()
 
 
