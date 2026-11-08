@@ -174,17 +174,76 @@ function confirmar({ titulo, texto, detalle, accion, onOk }) {
   return o;
 }
 
-/* ---------- navegación ---------- */
-const VISTAS = ["hablar", "pantalla", "control", "lanzar", "pulso"];
+/* ---------- portada: dato vivo de cada tarjeta (id k-<clave>, valor k-<clave>-v y detalle k-<clave>-s) ---------- */
+const Home = {
+  set(k, v, s, cls) {
+    const a = $("k-" + k + "-v"), b = $("k-" + k + "-s"), t = $("k-" + k);
+    if (a && v != null) a.textContent = String(v);
+    if (b && s != null) b.textContent = String(s);
+    if (t && cls != null) ["mal", "peligro", "sin"].forEach(c => t.classList.toggle(c, cls === c));
+  } };
+const plural = (n, uno, varios) => n + " " + (n === 1 ? uno : varios);
+
+/* ---------- navegación: portada + vistas a pantalla completa ----------
+   Se entra tocando una tarjeta (o un enlace data-ir); se sale con «Atrás», con Escape o con el botón/gesto atrás del
+   navegador (cada vista abierta es una entrada del historial). El mando de pantalla completa añade una entrada propia:
+   el primer «atrás» sale de pantalla completa y el segundo cierra la vista. */
 const alMostrar = {}; let vista = "unica";
+const on = (v, f) => (alMostrar[v] = alMostrar[v] || []).push(f);
+const Nav = (() => {
+  const VIST = ["pulso", "pantalla", "conv", "lanzar", "ventanas", "vigilante", "procesos", "memoria", "red", "energia"];
+  const inicio = $("inicio"), body = document.body, vEl = v => $("v-" + v);
+  let actual = null, y0 = 0, opener = null, ignora = 0;
+  const mandoFull = () => body.classList.contains("m-full");
+  try { history.scrollRestoration = "manual"; } catch (e) { }
+  function pon(v) {
+    if (v === actual) return;
+    if (mandoFull()) $("m-full").click();                 /* el mando nunca se queda en pantalla completa al irse de su vista */
+    const antes = actual; if (antes) vEl(antes).hidden = true;
+    actual = v;
+    if (v) {
+      if (!antes) y0 = scrollY;
+      inicio.hidden = true; vEl(v).hidden = false; body.classList.add("en-vista"); scrollTo(0, 0);
+      (alMostrar[v] || []).forEach(f => { try { f(); } catch (e) { } });
+      const f = vEl(v).querySelector(".vbar [tabindex='-1']"); if (f) f.focus({ preventScroll: true });
+    } else {
+      inicio.hidden = false; body.classList.remove("en-vista"); scrollTo(0, y0);
+      (alMostrar.inicio || []).forEach(f => { try { f(); } catch (e) { } });
+      try { if (opener && opener.isConnected) opener.focus({ preventScroll: true }); } catch (e) { }
+    }
+  }
+  function abrir(v) {
+    if (!VIST.includes(v) || v === actual) return;
+    if (!actual) { opener = document.activeElement && document.activeElement !== body ? document.activeElement : null; history.pushState({ v }, "", "#" + v); }
+    else history.replaceState({ v }, "", "#" + v);
+    pon(v);
+  }
+  function cerrar() { if (!actual) return; if (history.state && history.state.v) history.back(); else pon(null); }
+  addEventListener("popstate", e => {
+    if (ignora) { ignora--; return; }
+    const v = e.state && e.state.v;
+    if (Hoja.pila.length) { Hoja.cerrarTodas(); ignora++; history.go(1); return; }    /* «atrás» cierra primero la hoja abierta */
+    if (v === "pantalla" && mandoFull()) { $("m-full").click(); return; }
+    pon(VIST.includes(v) ? v : null);
+  });
+  new MutationObserver(() => {
+    const f = mandoFull(), st = history.state || {};
+    if (f && !st.full) history.pushState({ v: "pantalla", full: 1 }, "", "#pantalla");
+    else if (!f && st.full) history.back();
+  }).observe(body, { attributes: true, attributeFilter: ["class"] });
+  addEventListener("keydown", e => { if (e.key === "Escape" && actual && !e.defaultPrevented && !Hoja.pila.length && !mandoFull()) cerrar(); });
+  document.addEventListener("click", e => {
+    const b = e.target.closest("[data-ir]");
+    if (b) { ir(b.dataset.ir); return; }
+    if (e.target.closest("[data-atras]")) cerrar();
+  });
+  history.replaceState({ v: null }, "", location.pathname + location.search);
+  return { abrir, cerrar, get actual() { return actual; } };
+})();
 function ir(v) {
   if (v === "hablar" && Chat && Chat.textarea && document.activeElement === Chat.textarea) v = "conv";
-  const el = $("v-" + v); if (!el) return;
-  el.scrollIntoView({ behavior: RM.matches ? "auto" : "smooth", block: "start" });
-  (alMostrar[v] || []).forEach(f => f());
+  if (v === "hablar" || v === "inicio") Nav.cerrar(); else Nav.abrir(v);
 }
-document.addEventListener("click", e => { const b = e.target.closest("[data-ir]"); if (b) ir(b.dataset.ir); });
-const on = (v, f) => (alMostrar[v] = alMostrar[v] || []).push(f);
 
 /* =============================== PULSO =============================== */
 document.documentElement.classList.add("js");
@@ -245,6 +304,8 @@ function pintaPulso(d) {
   P.pinta($("frase"), P.frase(d, P.wd));
   pintaLatido();
   const l = $("lat"); l.classList.remove("beat"); void l.offsetWidth; l.classList.add("beat");
+  Home.set("pulso", g.t != null ? Math.round(g.t) + " °C" : "—",
+    ["Gráfica", g.u != null ? "carga " + F.n0(g.u) + " %" : null, g.w != null ? F.n0(g.w) + " W" : null, d.up != null ? "encendido hace " + F.up(d.up) : null].filter(Boolean).join(" · "), "");
 }
 function pintaLatido() {
   const d = D, w = P.wd, t = $("latT"); t.textContent = "";
@@ -338,6 +399,7 @@ P.on("wd", w => { if (D) P.pinta($("frase"), P.frase(D, w)); pintaLatido(); pint
 P.on("lost", ({ since }) => {
   document.body.classList.add("sin"); $("sinsenal").hidden = false; atmosfera(null); pintaTitular(D || {});
   $("ult").textContent = "Última lectura a las " + F.hora(since) + ".";
+  Home.set("pulso", "—", "Sin señal · última lectura a las " + F.hora(since), "sin");
   $("latT").textContent = "Sin latido desde las " + F.hora(since) + ".";
 });
 P.on("back", ({ reboot }) => {
@@ -352,7 +414,7 @@ setInterval(() => { if (document.hidden || Session.dead) return; const el = $("f
 
 /* =============================== HABLAR =============================== */
 const Chat = (() => {
-  let cerebros = [], cerebro = LS.get("jv_brain", "kimi"), modo = LS.get("jv_mode", "ask") === "do" ? "do" : "ask", cargado = false;
+  let cerebros = [], cerebro = LS.get("jv_brain", "claude"), modo = LS.get("jv_mode", "ask") === "do" ? "do" : "ask", cargado = false;
   const box = $("cerebros"), ta = $("ta"), env = $("enviar"), log = $("log"), vacio = $("vacio"), comp = $("comp");
   const HINT = { ask: "Leer: solo mira y planifica; no toca nada del PC.", do: "Actuar: hace cambios en el PC sin pedir permisos. Antes te pediré levantar la tapa roja." };
   const nombre = id => { const b = cerebros.find(x => x.id === id); return b ? String(b.nombre || id).replace(/\s*\(.*\)\s*$/, "") : id; };
@@ -374,13 +436,21 @@ const Chat = (() => {
     cerebro = id; LS.set("jv_brain", id);
     box.querySelectorAll("button").forEach(x => { const s = x.dataset.id === id; x.setAttribute("aria-checked", String(s)); x.tabIndex = s ? 0 : -1; });
     if (!quieto && id === "local") toast("La primera respuesta de la IA local puede tardar 30-120 s mientras se carga en la gráfica.", "", 4200);
-    return true;
+    resumen(); return true;
+  }
+  /* resumen del cerebro y el modo elegidos: cabecera de ajustes de la conversación y tarjeta de la portada */
+  function resumen() {
+    if (!cargado) return;
+    const nm = nombre(cerebro), leer = modo !== "do";
+    $("aj-res").textContent = nm + " · " + (leer ? "Leer" : "Actuar"); $("txt-op").dataset.modo = modo;
+    Home.set("conv", nm, leer ? "Leer · solo mira, no toca nada" : "Actuar · cambia cosas en el PC", leer ? "" : "peligro");
   }
   function setModo(m) {
     modo = m; LS.set("jv_mode", m);
     $("modos").querySelectorAll("button").forEach(b => { const s = b.dataset.modo === m; b.setAttribute("aria-checked", String(s)); b.tabIndex = s ? 0 : -1; });
     $("mhint").textContent = HINT[m]; $("mhint").classList.toggle("hz", m === "do"); comp.classList.toggle("hz", m === "do");
     ta.placeholder = m === "do" ? "¿Qué quieres que haga en el PC?" : "Dile algo a Pedro";
+    resumen();
   }
   $("modos").querySelectorAll("button").forEach(b => {
     b.addEventListener("click", () => setModo(b.dataset.modo));
@@ -391,11 +461,12 @@ const Chat = (() => {
     box.textContent = ""; for (let i = 0; i < 3; i++) box.append(h("button", { type: "button", disabled: true, "aria-label": "Cargando" }, h("b", { text: "…" }), h("span", { text: "consultando" })));
     try { const j = await api("/api/modelos"); cerebros = (Array.isArray(j.backends) ? j.backends : []).filter(b => b && b.id); }
     catch (e) { if (e instanceof AuthErr) return; cerebros = []; toast("No se pudo consultar quién está disponible: " + errText(e), "warn"); }
-    if (!cerebros.length) cerebros = [{ id: "kimi", nombre: "Kimi Code", ok: true, nota: "Lista no disponible; uso el predeterminado." }];
+    if (!cerebros.length) cerebros = [{ id: "claude", nombre: "Claude Code", ok: true, nota: "Lista no disponible; uso el predeterminado." }];
+    /* lo guardado (p. ej. "kimi") que ya no está en la lista, o no está disponible: cae al primero disponible de la lista (el selector sigue siendo manual) */
     if (!cerebros.some(b => b.id === cerebro && b.ok !== false)) { const f = cerebros.find(b => b.ok !== false); cerebro = f ? f.id : cerebro; }
-    pintaCerebros(); cargado = true;
+    pintaCerebros(); cargado = true; resumen();
   }
-  on("hablar", () => { if (!cargado) cargar(); });
+  on("conv", () => { if (!cargado) cargar(); });
   const crece = () => { ta.style.height = "auto"; ta.style.height = Math.min(150, ta.scrollHeight) + "px"; ta.style.overflowY = ta.scrollHeight > 150 ? "auto" : "hidden"; env.disabled = !ta.value.trim(); };
   ta.addEventListener("input", crece);
   ta.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !TOUCH) { e.preventDefault(); comp.requestSubmit(); } });
@@ -679,10 +750,17 @@ const Conv = (() => {
 
 /* =============================== CONTROL =============================== */
 const fmtN = (v, u) => v == null || v === "" || isNaN(+v) ? "—" : NF.format(+v) + (u || "");
+let vigOk = null, vigRein = null, vigEv = null;
+function pintaVigCard() {
+  const r = vigRein == null ? "Reinicios: sin datos" : plural(vigRein, "reinicio", "reinicios") + " hoy";
+  const e = vigEv == null ? "" : vigEv === 0 ? " · sin eventos graves" : " · " + plural(vigEv, "evento grave", "eventos graves");
+  Home.set("vig", vigOk == null ? "—" : vigOk ? "Vigilando" : "Parado", r + e, vigOk === false ? "peligro" : vigEv > 0 ? "mal" : "");
+}
 function pintaVig(d) {
   const box = $("vig"); if (!d) return; box.textContent = "";
   const lat = d.latido_s == null ? null : +d.latido_s, ok = !!d.activo && (lat == null || lat <= 120);
   const hoy = d.hoy || null, u = d.ultima || null;
+  vigOk = ok; vigRein = hoy && hoy.arranques_hoy != null ? Math.max(0, +hoy.arranques_hoy - 1) : null; pintaVigCard();
   if (hoy && +hoy.arranques_hoy > 1) box.append(h("p", { class: "alerta", text: "El PC se ha reiniciado hoy: " + hoy.arranques_hoy + " arranques. Revisa los eventos." }));
   box.append(h("div", { class: "sema" }, h("span", { class: "luz" + (ok ? "" : " mal"), "aria-hidden": "true" }),
     h("div", null, h("b", { text: ok ? "Vigilando." : "Parado." }), " ", lat == null ? "Sin latido." : "Último latido hace " + lat + " s.",
@@ -699,7 +777,7 @@ function pintaVig(d) {
 }
 $("vig-rf").addEventListener("click", async () => { const b = $("vig-rf"); b.disabled = true;
   try { P.wd = await api("/api/watchdog"); P.emit("wd", P.wd); } catch (e) { if (!(e instanceof AuthErr)) toast("Vigilante: " + errText(e), "err"); } b.disabled = false; });
-on("control", () => { if (P.wd) pintaVig(P.wd); else $("vig-rf").click(); });
+on("vigilante", () => { if (P.wd) pintaVig(P.wd); else $("vig-rf").click(); });
 
 /* energía (tapa roja) */
 let cuenta = 0;
@@ -709,10 +787,14 @@ function pendiente(tipo, txt) {
   const c = h("span", { class: "cnt num", text: String(s) });
   const cb = h("button", { class: "bt fuerte", type: "button", onclick: cancelar }, "Cancelar");
   box.append(h("div", { class: "pend", role: "alert" }, c, h("span", { text: (tipo === "apagar" ? "Apagando" : "Reiniciando") + " el " + PC + ". " + String(txt) }), cb)); cb.focus();
-  cuenta = setInterval(() => { s--; c.textContent = String(Math.max(0, s)); if (s <= 0) clearInterval(cuenta); }, 1000);
+  const que = tipo === "apagar" ? "Apagando" : "Reiniciando";
+  Home.set("ene", "Cuenta atrás: " + s + " s", que + " el " + PC + ". Toca para cancelar.", "peligro");
+  cuenta = setInterval(() => { s--; c.textContent = String(Math.max(0, s));
+    Home.set("ene", s > 0 ? "Cuenta atrás: " + s + " s" : "En marcha", que + " el " + PC + (s > 0 ? ". Toca para cancelar." : "."), "peligro");
+    if (s <= 0) clearInterval(cuenta); }, 1000);
 }
 async function cancelar() {
-  try { const j = await api("/api/cancelar"); clearInterval(cuenta); $("pend").textContent = ""; toast(j.text || "Cancelado.", "ok"); }
+  try { const j = await api("/api/cancelar"); clearInterval(cuenta); $("pend").textContent = ""; Home.set("ene", "Listo", "Apagar, reiniciar, bloquear", ""); toast(j.text || "Cancelado.", "ok"); }
   catch (e) { if (!(e instanceof AuthErr)) toast(errText(e), "err"); }
 }
 $("cancelar").addEventListener("click", cancelar);
@@ -771,12 +853,14 @@ const Proc = (() => {
     if (!ok) { list.textContent = ""; list.append(h("li", null, h("div", { class: "skl", style: "width:100%" })), h("li", null, h("div", { class: "skl", style: "width:100%" }))); }
     try { const j = await api("/api/procesos");
       D2 = { total: +j.total || 0, top: Array.isArray(j.top) ? j.top : [], ventanas: Array.isArray(j.ventanas) ? j.ventanas : [] }; ok = true;
-      $("n-top").textContent = String(D2.total || D2.top.length); $("n-win").textContent = String(D2.ventanas.length); pinta(); }
+      $("n-top").textContent = String(D2.total || D2.top.length); $("n-win").textContent = String(D2.ventanas.length); pinta();
+      const pesa = D2.top.reduce((m, p) => (!m || (+p.mem_mb || 0) > (+m.mem_mb || 0) ? p : m), null);
+      Home.set("proc", plural(D2.total || D2.top.length, "proceso", "procesos"), pesa ? "Más pesado: " + String(pesa.name || "?") : "Lo que consume el PC"); }
     catch (e) { if (e instanceof AuthErr) throw e;
       if (!ok) { list.textContent = ""; list.append(h("li", { class: "vacia err" }, h("span", { text: errText(e) + " Se reintentará solo." }))); } else toast("Procesos: " + errText(e), "warn");
       throw e; }
   }
-  const poll = poller(cargar, 60000); poll._vista = "control";
+  const poll = poller(cargar, 60000); poll._vista = "procesos";
   $("pro-rf").addEventListener("click", () => poll.now());
   return poll;
 })();
@@ -787,6 +871,7 @@ async function cargaEventos() {
   const box = $("ev"); if (!box.childNodes.length) box.append(h("div", { class: "skl" }));
   try { const j = await api("/api/eventos"); const t = String(j.text || ""); box.textContent = "";
     const items = t.split(/\r?\n/).map(s => s.trim()).filter(l => /^\d{2}\/\d{2}\s+\d{2}:\d{2}/.test(l));
+    vigEv = items.length ? items.length : (/sin eventos/i.test(t) ? 0 : null); pintaVigCard();
     if (!items.length) { box.append(h("p", { class: "vacia", text: /sin eventos/i.test(t) ? "Todo en calma: sin eventos graves en 24 h." : (t || "Sin datos.") })); return; }
     box.append(h("ul", { class: "lista ev" }, items.reverse().map(l => {
       const m = l.match(/^(\d{2}\/\d{2}\s+\d{2}:\d{2})\s+id(\d+)\s+(.*)$/), tm = m ? m[1] : l.slice(0, 11), id = m ? m[2] : "", pr = m ? m[3] : l.slice(11);
@@ -797,7 +882,7 @@ async function cargaEventos() {
     })));
   } catch (e) { if (e instanceof AuthErr) throw e; box.textContent = ""; box.append(h("p", { class: "vacia err", text: errText(e) + " Se reintentará solo." })); throw e; }
 }
-const pollEv = poller(cargaEventos, 300000); pollEv._vista = "control";
+const pollEv = poller(cargaEventos, 300000); pollEv._vista = "vigilante";
 $("ev-rf").addEventListener("click", () => pollEv.now());
 let textoRed = "";
 async function cargaRed() {
@@ -807,7 +892,7 @@ async function cargaRed() {
   b.disabled = false;
 }
 $("red-rf").addEventListener("click", cargaRed); $("red-cp").addEventListener("click", () => copiar(textoRed || $("red").textContent));
-let redHecha = false; on("control", () => { if (!redHecha) { redHecha = true; cargaRed(); } });
+let redHecha = false; on("red", () => { if (!redHecha) { redHecha = true; cargaRed(); } });
 
 /* memoria y agenda de Pedro */
 async function cargaPedro() {
@@ -824,12 +909,13 @@ async function cargaPedro() {
     for (const it of ai) ag.append(fila(String(it.texto || ""), String(it.cuando) + " · " + (it.tipo === "tarea" ? "tarea" : "aviso") + (it.repetir !== "no" ? " · " + it.repetir : ""), borra("/api/agenda_borrar", it.id, it.texto)));
     if (!mi.length) mem.append(h("p", { class: "vacia", text: "Todavía no recuerda nada." }));
     for (const it of mi.slice().reverse()) mem.append(fila(String(it.texto || ""), String(it.t || "") + (it.tema ? " · " + it.tema : ""), borra("/api/olvidar", it.id, it.texto)));
+    Home.set("mem", plural(mi.length, "recuerdo", "recuerdos"), ai.length + " en la agenda");
     if (s && s.hoy) $("ped-uso").textContent = "Hoy: " + s.hoy.llamadas + " consultas a Pedro (" + s.hoy.segundos_medio + " s de media). Últimos 7 días: " + s.semana.llamadas + ". Para añadir, díselo hablando: «recuerda que…», «avísame a las…».";
   } catch (e) { if (!(e instanceof AuthErr)) { ag.textContent = ""; ag.append(h("p", { class: "vacia err", text: errText(e) })); } }
   b.disabled = false;
 }
 $("ped-rf").addEventListener("click", cargaPedro);
-on("control", cargaPedro);
+on("memoria", cargaPedro);
 $("c-nueva").addEventListener("click", () => confirmar({ titulo: "¿Conversación nueva?", texto: "Pedro olvida el hilo de esta charla (no lo que recuerda a largo plazo).", detalle: "", accion: "Empezar de cero",
   onOk: async () => { try { const j = await api("/api/nueva"); toast(j.text || "Hecho.", "ok", 2400); } catch (e) { if (!(e instanceof AuthErr)) toast(errText(e), "err"); } } }));
 
@@ -878,7 +964,8 @@ const Lanz = (() => {
     catch (e) { if (e instanceof AuthErr || tok !== mi) return; texto = errText(e); pre.textContent = texto; est.textContent = "Error."; }
   }
   async function cargar() {
-    try { const j = await api("/api/launchers"); L = { grupos: Array.isArray(j.grupos) ? j.grupos : [], items: Array.isArray(j.items) ? j.items : [] }; ok = true; pinta(); }
+    try { const j = await api("/api/launchers"); L = { grupos: Array.isArray(j.grupos) ? j.grupos : [], items: Array.isArray(j.items) ? j.items : [] }; ok = true; pinta();
+      Home.set("lanzar", plural(L.items.length, "acceso", "accesos"), L.grupos.map(g => String(g.nombre)).join(", ") || "Webs, apps y tareas"); }
     catch (e) { if (e instanceof AuthErr) return; box.textContent = "";
       box.append(h("p", { class: "vacia err", text: errText(e) }), h("button", { class: "bt", type: "button", onclick: cargar }, ic("refresh"), "Reintentar")); }
   }
@@ -886,7 +973,7 @@ const Lanz = (() => {
   on("lanzar", () => { if (!ok) cargar(); });
   return { cerrar: () => hoja && hoja.close() };
 })();
-on("pulso", () => Lanz.cerrar()); on("hablar", () => Lanz.cerrar()); on("control", () => Lanz.cerrar());
+["inicio", "pulso", "pantalla", "conv", "ventanas", "vigilante", "procesos", "memoria", "red", "energia"].forEach(v => on(v, () => Lanz.cerrar()));
 
 /* =============================== VENTANAS (lista con acciones; se usa en Control y en el mando) =============================== */
 const Vent = (() => {
@@ -913,9 +1000,12 @@ const Vent = (() => {
   return { lista, pinta };
 })();
 const wins = $("wins");
-async function cargaVentanas() { pinta_(await Vent.lista()); }
+async function cargaVentanas() {
+  const vs = await Vent.lista(); pinta_(vs); const act = vs.find(w => w.activa);
+  Home.set("vent", vs.length + (vs.length === 1 ? " abierta" : " abiertas"), act ? "Al frente: " + String(act.titulo || "(sin título)") : "Ninguna al frente");
+}
 const pinta_ = vs => Vent.pinta(wins, vs, () => later(() => pollWin.now(), 400));
-const pollWin = poller(cargaVentanas, 10000); pollWin._vista = "control";
+const pollWin = poller(cargaVentanas, 10000); pollWin._vista = "ventanas";
 $("win-rf").addEventListener("click", () => pollWin.now());
 
 /* =============== PANTALLA: MANDO REMOTO v2 =============== */
@@ -1233,6 +1323,7 @@ $("salir").addEventListener("click", async () => {
 /* arranque */
 addEventListener("keydown", e => { if (e.key === "/" && !/TEXTAREA|INPUT/.test((document.activeElement || {}).tagName || "") && !Hoja.pila.length) { e.preventDefault(); ir("conv"); Chat.textarea.focus(); } });
 P.start(); pollSismo.start(); Chat.cargar();
-["control", "lanzar"].forEach(v => (alMostrar[v] || []).forEach(f => { try { f(); } catch (e) { } }));
+/* se precargan los datos de las vistas para que las tarjetas de la portada tengan su dato vivo desde el primer momento */
+["vigilante", "red", "memoria", "lanzar"].forEach(v => (alMostrar[v] || []).forEach(f => { try { f(); } catch (e) { } }));
 Pollers.forEach(p => p._vista && p.start());
 })();
