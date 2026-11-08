@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -319,8 +320,10 @@ def tunnel_reachable(url):
         return False
 
 
-def new_link():
-    """Devuelve (url, error). Rate limit + bloqueos incluidos."""
+def new_link(pre=False):
+    """Devuelve (url, error). Rate limit + bloqueos incluidos.
+    pre=True: lo pide otro equipo de David por el puente de Tailscale (firmado); ese móvil ya entró allí,
+    así que aquí se le da de alta sin el código de 8 dígitos (el PIN se sigue pidiendo)."""
     why = lock_status()
     if why:
         return None, why
@@ -336,7 +339,7 @@ def new_link():
     for k in [k for k, v in TOKENS.items() if v["dead"] and now - v["t"] > 7 * 86400]:
         TOKENS.pop(k, None)
     tok = secrets.token_urlsafe(24)
-    TOKENS[tok] = {"t": now, "fails": 0, "dead": False}
+    TOKENS[tok] = {"t": now, "fails": 0, "dead": False, "pre": bool(pre)}
     save_active_link(tok, now)
     log("enlace web generado")
     return f"{base}/t/{tok}", None
@@ -455,7 +458,7 @@ class Handler(BaseHTTPRequestHandler):
             t = TOKENS.get(tok)
             if not t or t["dead"] or time.time() - t["t"] > TOKEN_TTL or lock_status() or ip_blocked(self._ip()):
                 return self._send(404, "no")
-            known = (not require_device()) or device_ok(self)
+            known = (not require_device()) or device_ok(self) or t.get("pre")
             if not known and not enroll_open():
                 log(f"enlace abierto desde dispositivo NO autorizado ({self._ip()})")
                 return self._send(404, "no")
@@ -519,7 +522,9 @@ class Handler(BaseHTTPRequestHandler):
         pin = str(d.get("pin", ""))[:32]
         known = (not require_device()) or device_ok(self)
         enrolled_now = False
-        if not known:
+        if not known and t.get("pre"):
+            enrolled_now = True      # enlace del puente: el móvil ya entró en el otro PC de David
+        elif not known:
             enrolled_now = enroll_check(str(d.get("enroll", ""))[:16])
         if (known or enrolled_now) and pin_ok(pin):
             register_ok(ip)
@@ -593,6 +598,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def _api(self, action, d):
         try:
+            if action == "equipos":
+                return self._json(200, equipos_lista())
+            if action == "saltar":
+                url, err = puente_pedir(str(d.get("nombre", "")))
+                return self._json(200 if url else 502, {"url": url} if url else {"error": err})
             if action == "estado":
                 return self._json(200, {"text": H["estado"]()})
             if action == "eventos":
@@ -773,6 +783,155 @@ $("mic").onclick=()=>{try{rec.start();log("Escuchando…")}catch(e){}}}else{$("m
 </script></html>"""
 
 
+# ---------------------------------------------------------------- puente entre equipos (Tailscale)
+# Cada PC de David corre su propio Pedro (su bot, su túnel). Por la red privada de Tailscale cada uno
+# escucha SOLO /ping y /puente/enlace, firmado con un secreto compartido (equipos.json, fuera del repo).
+# Desde el panel de un PC se salta al otro sin pedir otro código, y cada uno funciona aunque el otro esté apagado.
+EQ_F = HOME / "equipos.json"
+TAILSCALE = shutil.which("tailscale") or r"C:\Program Files\Tailscale\tailscale.exe"
+PUENTE = {"httpd": None, "ip": None}
+FIRMA_VENTANA = 60
+
+
+def equipos_cfg():
+    return _read_json(EQ_F, {})
+
+
+def ts_ip():
+    try:
+        r = subprocess.run([TAILSCALE, "ip", "-4"], capture_output=True, text=True, timeout=8, creationflags=NOWIN)
+        ip = (r.stdout or "").strip().splitlines()
+        return ip[0].strip() if ip and ip[0].startswith("100.") else None
+    except Exception:
+        return None
+
+
+def _firma(secreto, ts):
+    return hmac.new(secreto.encode(), f"pedro-puente|{ts}".encode(), hashlib.sha256).hexdigest()
+
+
+def _otro(nombre):
+    for e in equipos_cfg().get("equipos", []):
+        if e.get("nombre", "").lower() == nombre.lower():
+            return e
+    return None
+
+
+def _ping_ts(ip, timeout=2.5):
+    try:
+        with urllib.request.urlopen(f"http://{ip}:{PORT}/ping", timeout=timeout) as r:
+            return r.read(16) == b"pong"
+    except Exception:
+        return False
+
+
+def equipos_lista():
+    c = equipos_cfg()
+    otros = c.get("equipos", [])
+    res = [None] * len(otros)
+
+    def mira(i, e):
+        res[i] = {"nombre": e.get("nombre", "?"), "online": _ping_ts(e.get("ip", ""))}
+    hs = [threading.Thread(target=mira, args=(i, e), daemon=True) for i, e in enumerate(otros)]
+    for h in hs:
+        h.start()
+    for h in hs:
+        h.join(4)
+    return {"yo": c.get("yo") or CFG.get("JARVIS_EQUIPO") or "Este PC",
+            "equipos": [r or {"nombre": e.get("nombre", "?"), "online": False} for r, e in zip(res, otros)]}
+
+
+def puente_pedir(nombre):
+    """Pide al otro equipo un enlace de su panel. Devuelve (url, error)."""
+    e, c = _otro(nombre), equipos_cfg()
+    if not e or not c.get("secreto"):
+        return None, "Ese equipo no está configurado (equipos.json)."
+    ts = str(int(time.time()))
+    rq = urllib.request.Request(f"http://{e['ip']}:{PORT}/puente/enlace", data=b"{}", method="POST",
+                                headers={"X-Ts": ts, "X-Firma": _firma(c["secreto"], ts), "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(rq, timeout=90) as r:   # el otro puede tener que abrir su túnel (hasta ~70 s)
+            d = json.loads(r.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as ex:
+        try:
+            d = json.loads(ex.read().decode("utf-8", "replace"))
+        except Exception:
+            d = {}
+        return None, d.get("error") or f"{nombre} respondió con error {ex.code}."
+    except Exception:
+        return None, f"{nombre} no responde (¿apagado o sin Tailscale?)."
+    log(f"puente: enlace pedido a {nombre}")
+    return (d.get("url"), None) if d.get("url") else (None, d.get("error") or "Sin enlace.")
+
+
+class Puente(BaseHTTPRequestHandler):
+    server_version = "J"
+    sys_version = ""
+
+    def log_message(self, *a):
+        pass
+
+    def _out(self, code, obj):
+        txt = isinstance(obj, str)
+        b = (obj if txt else json.dumps(obj, ensure_ascii=False)).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "text/plain; charset=utf-8" if txt else "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(b)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(b)
+
+    def _de_tailscale(self):
+        try:
+            o = [int(x) for x in self.client_address[0].split(".")]
+            return o[0] == 100 and 64 <= o[1] <= 127
+        except Exception:
+            return False
+
+    def do_GET(self):
+        if self.path.split("?")[0] == "/ping" and self._de_tailscale():
+            return self._out(200, "pong")
+        return self._out(404, "no")
+
+    def do_POST(self):
+        if self.path.split("?")[0] != "/puente/enlace" or not self._de_tailscale():
+            return self._out(404, "no")
+        sec = equipos_cfg().get("secreto", "")
+        ts = self.headers.get("X-Ts", "")
+        try:
+            fresco = abs(time.time() - int(ts)) <= FIRMA_VENTANA
+        except Exception:
+            fresco = False
+        if not sec or not fresco or not hmac.compare_digest(self.headers.get("X-Firma", ""), _firma(sec, ts)):
+            log(f"puente: firma MALA desde {self.client_address[0]}")
+            return self._out(403, {"error": "firma"})
+        try:
+            url, err = new_link(pre=True)
+        except Exception as e:
+            url, err = None, f"No pude abrir el túnel ({type(e).__name__})."
+        log(f"puente: enlace dado a {self.client_address[0]}" if url else f"puente: sin enlace ({err})")
+        return self._out(200 if url else 503, {"url": url} if url else {"error": err})
+
+
+def puente_vigia():
+    """Escucha en la IP de Tailscale en cuanto exista (Tailscale puede arrancar después que Pedro)."""
+    while True:
+        try:
+            if equipos_cfg().get("secreto"):
+                ip = ts_ip()
+                if ip and ip != PUENTE["ip"]:
+                    if PUENTE["httpd"]:
+                        PUENTE["httpd"].shutdown()
+                    h = ThreadingHTTPServer((ip, PORT), Puente)
+                    h.daemon_threads = True
+                    threading.Thread(target=h.serve_forever, daemon=True).start()
+                    PUENTE.update({"httpd": h, "ip": ip})
+                    log(f"puente escuchando en {ip}:{PORT}")
+        except Exception as e:
+            log(f"puente: {type(e).__name__}: {str(e)[:120]}")
+        time.sleep(60)
+
+
 def init(host_funcs, cfg):
     global PORT
     H.update(host_funcs)
@@ -780,6 +939,7 @@ def init(host_funcs, cfg):
     PORT = int(cfg.get("JARVIS_WEB_PORT", "18765"))
     restore_link()
     threading.Thread(target=janitor, daemon=True).start()
+    threading.Thread(target=puente_vigia, daemon=True).start()
 
 
 if __name__ == "__main__":
@@ -797,6 +957,8 @@ if __name__ == "__main__":
         envp.write_text(txt, encoding="utf-8")
         print("CODIGO DE ALTA DE DISPOSITIVOS NUEVOS (8 digitos): " + code)
         print("Guardalo en tu gestor de contrasenas. No se vuelve a mostrar. Reinicia Jarvis para aplicarlo.")
+    elif cmd == "secreto":
+        print(secrets.token_urlsafe(32))
     elif cmd == "devices":
         devs = _read_json(DEV_F, {})
         for hh, v in devs.items():

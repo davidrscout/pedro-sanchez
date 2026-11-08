@@ -7,13 +7,20 @@ DIR=/jffs/wol
 API="https://api.telegram.org/bot$TOKEN"
 LOG=$DIR/wol.log
 OFF=0
+WIFI_MAC="50:BB:B5:EE:8A:40"
+ETH_MAC="30:C5:99:AE:41:6F"
 
 log() { echo "$(date '+%F %T') $*" >> $LOG; [ $(wc -c < $LOG) -gt 50000 ] && tail -n 200 $LOG > $LOG.t && mv $LOG.t $LOG; }
 send() { curl -s -m 15 "$API/sendMessage" --data-urlencode "chat_id=$ALLOWED" --data-urlencode "text=$1" >/dev/null; }
-pc_on() { arping -c2 -w3 -I br0 $PCIP 2>/dev/null | grep -qi "$MAC"; }
+pc_on() { arping -c2 -w3 -I br0 $PCIP 2>/dev/null | grep -qiE "$ETH_MAC|$WIFI_MAC"; }
 
 wake() {
-  ether-wake -b -i br0 $MAC; sleep 1; ether-wake -b -i br0 $MAC
+  log "Enviando WoL a Cable ($ETH_MAC) y Wi-Fi ($WIFI_MAC)..."
+  ether-wake -b -i br0 $ETH_MAC
+  ether-wake -b -i br0 $WIFI_MAC
+  sleep 1
+  ether-wake -b -i br0 $ETH_MAC
+  ether-wake -b -i br0 $WIFI_MAC
   log "WoL enviado"
   send "⚡ Encendiendo el PC… te aviso cuando esté listo."
   i=0
@@ -32,7 +39,11 @@ while true; do
   if pc_on; then sleep 20; continue; fi
   R=$(curl -s -m 60 "$API/getUpdates" -d "offset=$OFF" -d "timeout=45" -d "limit=1" -d 'allowed_updates=["message"]')
   if [ -z "$R" ]; then sleep 10; continue; fi
-  if echo "$R" | grep -q '"error_code":409'; then log "409: otro proceso lee el bot, espero"; sleep 300; continue; fi
+  if echo "$R" | grep -q '"error_code":409'; then
+    log "409: otro proceso lee el bot, reintento en 15s"
+    sleep 15
+    continue
+  fi
   echo "$R" | grep -q '"update_id"' || continue
   UID_=$(echo "$R" | sed -n 's/.*"update_id":\([0-9]*\).*/\1/p')
   FROM=$(echo "$R" | sed -n 's/.*"from":{"id":\([0-9]*\).*/\1/p')

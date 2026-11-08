@@ -1,0 +1,7 @@
+{
+  "yo": "Casa",
+  "secreto": "PON_AQUI_EL_MISMO_SECRETO_EN_TODOS_TUS_PCS (python webpanel.py secreto)",
+  "equipos": [
+    {"nombre": "Oficina", "ip": "100.x.y.z"}
+  ]
+}

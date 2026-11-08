@@ -1,0 +1,9 @@
+psutil
+requests
+mcp>=2.2,<3
+edge-tts
+faster-whisper
+av
+pillow
+numpy
+qrcode

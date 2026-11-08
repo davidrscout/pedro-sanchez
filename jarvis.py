@@ -488,10 +488,11 @@ def send_web_link(chat, user_msg_id, code=""):
     if user_msg_id:
         tg("deleteMessage", data={"chat_id": chat, "message_id": user_msg_id})   # borra tu /web (lleva el código)
     secret = CFG.get("JARVIS_TOTP_SECRET", "")
-    if not secret:
+    sin_totp = CFG.get("JARVIS_SIN_TOTP") == "1"   # PC sin Authenticator: /web basta (solo tu id de Telegram); el PIN sigue protegiendo
+    if not secret and not sin_totp:
         send_text(chat, "No hay código de Authenticator configurado en el PC.")
         return
-    good, why = totp.verify(secret, code)
+    good, why = (True, "") if sin_totp else totp.verify(secret, code)
     if not good:
         log("/web con código TOTP incorrecto o bloqueado: " + totp.diagnose(secret, code))
         tg_note = tg("sendMessage", data={"chat_id": chat, "text": (why + " Manda solo el código de 6 dígitos de tu Authenticator.")})
@@ -709,7 +710,8 @@ def handle_update(u):
             send_text(chat, "No había ningún enlace activo.")
         return
     if not TG_CONTROL:
-        send_text(chat, "Control por Telegram desactivado. Manda el código de tu Authenticator (6 dígitos).")
+        send_text(chat, "Control por Telegram desactivado. Manda /web para el enlace del panel." if CFG.get("JARVIS_SIN_TOTP") == "1"
+                  else "Control por Telegram desactivado. Manda el código de tu Authenticator (6 dígitos).")
         return
     if not text:
         send_text(chat, "De momento solo entiendo texto.")
@@ -780,17 +782,14 @@ def main():
         return 1
     me = tg("getMe")
     espera = 5
-    for _ in range(40):   # tras un reinicio la red tarda en subir: reintenta ~35 min antes de rendirse
-        if me:
-            break
-        log("getMe falló: sin red o token inválido, reintento")
+    fallos = 0
+    while not me:   # sin red tras un reinicio (21/10 tardó >40 min): reintenta siempre, nunca se rinde
+        fallos += 1
+        if fallos <= 3 or fallos % 30 == 0:
+            log(f"getMe falló: sin red o token inválido, reintento ({fallos})")
         time.sleep(espera)
         espera = min(espera * 2, 60)
         me = tg("getMe")
-    if not me:
-        log("getMe falló: token inválido o sin red")
-        print("getMe falló: token inválido o sin red")
-        return 1
     log(f"Jarvis arrancado como @{me.get('username')}")
     purge_pending_deletes()
     backends.init(CFG, WORK, log)

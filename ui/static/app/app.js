@@ -1182,12 +1182,27 @@ const Mando = (() => {
 })();
 
 /* =============================== equipo y salida =============================== */
-$("equipo").addEventListener("click", () => {
-  Hoja.open({ titulo: "Equipos", texto: "Por ahora el panel controla un solo PC. Los demás llegarán pronto.",
-    cuerpo: h("ul", { class: "equipos" },
-      h("li", null, h("span", null, h("b", { text: PC })), h("span", { class: "ya", text: "este" })),
-      h("li", { "aria-disabled": "true" }, h("span", { text: "PC sucio" }), h("span", { class: "pronto", text: "pronto" })),
-      h("li", { "aria-disabled": "true" }, h("span", { text: "Añadir equipo" }), h("span", { class: "pronto", text: "pronto" }))) });
+/* Equipos: cada PC tiene su Pedro; aquí se salta al otro por el puente de Tailscale (pide su enlace, luego su PIN). */
+(async () => { try { const j = await api("/api/equipos"); if (j.yo) $("equipo").firstChild.textContent = j.yo; } catch (e) { } })();
+$("equipo").addEventListener("click", async () => {
+  const lista = h("ul", { class: "equipos" }, h("li", null, h("span", { text: "Buscando equipos…" }), h("span", { class: "pronto", text: "" })));
+  const o = Hoja.open({ titulo: "Equipos", texto: "Cada PC tiene su propio Pedro. Al saltar, pide el PIN de ese PC.", cuerpo: lista });
+  let j; try { j = await api("/api/equipos"); } catch (e) { if (e instanceof AuthErr) return; lista.replaceChildren(h("li", null, h("span", { text: errText(e) }), h("span"))); return; }
+  const filas = [h("li", null, h("span", null, h("b", { text: j.yo || PC })), h("span", { class: "ya", text: "este" }))];
+  for (const eq of j.equipos || []) {
+    const est = h("span", { class: eq.online ? "ya" : "pronto", text: eq.online ? "entrar ›" : "apagado" });
+    const li = h("li", { role: "button", tabindex: eq.online ? "0" : "-1", "aria-disabled": eq.online ? null : "true" }, h("span", { text: eq.nombre }), est);
+    const ir = async () => {
+      if (!eq.online || li.dataset.busy) return; li.dataset.busy = "1"; est.textContent = "conectando…";
+      try { const r = await api("/api/saltar", { nombre: eq.nombre }); if (r.url) { o.close(); location.href = r.url; return; } est.textContent = "sin enlace"; }
+      catch (e) { if (e instanceof AuthErr) return; est.textContent = "falló"; toast(errText(e), "err", 4000); }
+      delete li.dataset.busy;
+    };
+    li.addEventListener("click", ir); li.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); ir(); } });
+    filas.push(li);
+  }
+  if (!(j.equipos || []).length) filas.push(h("li", { "aria-disabled": "true" }, h("span", { text: "No hay más equipos (equipos.json)" }), h("span")));
+  lista.replaceChildren(...filas);
 });
 $("salir").addEventListener("click", async () => {
   const b = $("salir"); b.disabled = true;

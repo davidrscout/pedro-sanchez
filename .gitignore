@@ -29,3 +29,6 @@ launchers.json
 router/rearmar_router.vbs
 # Prototipos con datos de ejemplo de proyectos privados
 dev_proto*.py
+
+# Equipos y secreto del puente entre PCs
+equipos.json
