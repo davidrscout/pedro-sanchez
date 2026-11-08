@@ -689,12 +689,12 @@ class Handler(BaseHTTPRequestHandler):
                 if not prompt:
                     return self._json(400, {"error": "vacío"})
                 if action == "chat":
-                    backend, mode = str(d.get("backend", "kimi")), ("do" if d.get("mode") == "do" else "ask")
+                    backend, mode = str(d.get("backend", "claude")), ("do" if d.get("mode") == "do" else "ask")
                 else:
-                    backend, mode = ("agy", "do") if action == "agy" else ("kimi", "do" if action == "hacer" else "ask")
+                    backend, mode = ("agy", "do") if action == "agy" else ("claude", "do" if action == "hacer" else "ask")
                 if d.get("voz") is True:     # conversación hablada: respuesta corta y apta para leer en voz alta
                     prompt = VOZ_PREFIJO + prompt
-                if backend not in ("kimi", "agy", "local"):
+                if backend not in ("claude", "kimi", "agy", "local"):
                     return self._json(400, {"error": "cerebro desconocido"})
                 if mode == "do" and d.get("confirm") is not True:
                     return self._json(400, {"error": "falta confirmación"})

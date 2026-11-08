@@ -9,7 +9,7 @@
   <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white">
   <img alt="Windows" src="https://img.shields.io/badge/Windows-11-0078D4?logo=windows&logoColor=white">
   <img alt="Telegram" src="https://img.shields.io/badge/Telegram-bot-26A5E4?logo=telegram&logoColor=white">
-  <img alt="Kimi Code" src="https://img.shields.io/badge/cerebro-Kimi%20Code-D97757">
+  <img alt="Claude Code" src="https://img.shields.io/badge/cerebro-Claude%20Code-D97757">
   <img alt="Privado" src="https://img.shields.io/badge/c%C3%B3digo-privado-555">
 </p>
 
@@ -19,7 +19,7 @@
 
 ## Qué hace
 
-- **Habla con él**, por texto o por voz (dictado en el propio PC con Whisper local), y elige quién contesta: **Kimi Code**, **Antigravity** o una **IA local**.
+- **Habla con él**, por texto o por voz (dictado en el propio PC con Whisper local), y elige a mano quién contesta: **Claude Code** (por defecto), **Kimi Code**, **Antigravity** o una **IA local**.
 - **Dos modos**: *Leer* (mira y propone, no toca nada) y *Actuar* (cambia cosas en el PC, siempre tras confirmar).
 - **Mando remoto desde el móvil**: pantalla en directo con touchpad, clics, teclado, volumen, bloquear, apagar o reiniciar.
 - **Pulso del PC**: temperatura y consumo de la gráfica, carga, reinicios del día.
@@ -31,7 +31,7 @@
 <table>
   <tr>
     <td width="50%"><img src="docs/hablar.jpg" alt="Hablar"><br><sub><b>Hablar</b>: toca y habla, o manos libres</sub></td>
-    <td width="50%"><img src="docs/conv.jpg" alt="Conversación"><br><sub><b>Conversación</b>: elige Kimi Code, Antigravity o IA local, y si solo lee o actúa</sub></td>
+    <td width="50%"><img src="docs/conv.jpg" alt="Conversación"><br><sub><b>Conversación</b>: elige Claude Code, Kimi Code, Antigravity o IA local, y si solo lee o actúa</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/pantalla.jpg" alt="Pantalla"><br><sub><b>Pantalla</b> en directo y mando con touchpad</sub></td>
@@ -70,6 +70,7 @@
 ```bash
 python test_web.py        # panel: sesiones, PIN, TOTP, bloqueos, dictado
 python test_nuevo.py      # memoria, agenda y herramientas
+python test_cerebro.py    # cerebro Claude: coste cero, permisos y sesiones (simulado)
 python test_kimi.py       # backend Kimi: permisos, sesiones y MCP (simulado)
 python test_kimi_guard.py # guarda de comandos prohibidos (sin ejecutarlos)
 python jarvis.py --selftest
@@ -77,7 +78,9 @@ python jarvis.py --selftest
 
 ## Notas
 
-- **Kimi Code**: usa la cuenta y el modelo configurados en el CLI; el proyecto no guarda ninguna clave de Kimi.
+- **Coste cero**: el cerebro predeterminado es Claude Code con la suscripción de claude.ai; antes de lanzarlo se quita del entorno cualquier clave de API de pago.
+- **El cerebro se elige a mano** en el panel; nunca hay enrutado automático.
+- **Kimi Code** (opcional): usa la cuenta y el modelo configurados en su CLI; el proyecto no guarda ninguna clave de Kimi.
 - **Comandos prohibidos**: `kimi_guard.py` los intercepta antes de `Bash` mediante un hook `PreToolUse` registrado en la configuración local de Kimi. Solo actúa cuando el proceso lleva `PEDRO_KIMI_GUARD=1`; los demás usos de Kimi no se ven afectados.
-- **Antigravity**: en modo *Leer* no puede ejecutar comandos sin consola (los deniega solo), así que para que mire el PC hay que usar *Actuar* o elegir Kimi.
+- **Antigravity**: en modo *Leer* no puede ejecutar comandos sin consola (los deniega solo), así que para que mire el PC hay que usar *Actuar* o elegir Claude.
 - Las variables del `.env` conservan el prefijo `JARVIS_` por compatibilidad.

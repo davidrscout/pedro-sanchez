@@ -18,8 +18,8 @@ w.H.update({"log": lambda m: None, "alert": lambda m: called.append(("alert", m)
             "estado": lambda: "CPU ok", "eventos": lambda: "sin eventos", "captura": lambda: b"\xff\xd8JPEG",
             "bloquear": lambda: called.append("lock"), "pantalla": lambda: None, "ahorro": lambda: None,
             "vol": lambda a: None, "abrir": lambda a: "ok", "power": lambda k: called.append(("power", k)) or "hecho",
-            "brain": lambda p, m, b="kimi": f"resp[{b}/{m}]:{p}",
-            "backends": lambda: [{"id": "kimi", "nombre": "Kimi", "ok": True, "nota": ""}],
+            "brain": lambda p, m, b="claude": f"resp[{b}/{m}]:{p}",
+            "backends": lambda: [{"id": "claude", "nombre": "Claude", "ok": True, "nota": ""}, {"id": "kimi", "nombre": "Kimi", "ok": True, "nota": ""}],
             "watchdog": lambda: {"activo": True, "latido_s": 3, "tarea": "Running", "sesiones": 1, "ultima": None, "hoy": None, "eventos": []},
             "serie": lambda: {"desde": 0, "paso_s": 300, "puntos": [None, {"t": 40.0, "u": 10, "c": 5}], "cortes": [], "muestras": 1},
             "procesos": lambda: {"total": 1, "top": [{"pid": 4, "name": "x.exe", "cpu": 0, "mem_mb": 1, "protegido": False}], "ventanas": []},
@@ -151,7 +151,7 @@ requests.post(f"{B}/api/apagar", cookies=ck, headers=hd, json={"confirm": True})
 ok(("power", "apagar") in called, "apagar con confirm:true sí se ejecuta")
 ok(requests.post(f"{B}/api/hacer", cookies=ck, headers=hd, json={"prompt": "x"}).status_code == 400, "/hacer sin confirmación -> 400")
 r = requests.post(f"{B}/api/preguntar", cookies=ck, headers=hd, json={"prompt": "hola"}); jid = r.json()["job"]; time.sleep(0.5)
-ok("resp[kimi/ask]:hola" in requests.get(f"{B}/api/job/{jid}", cookies=ck).json()["text"], "pregunta -> trabajo asíncrono con respuesta")
+ok("resp[claude/ask]:hola" in requests.get(f"{B}/api/job/{jid}", cookies=ck).json()["text"], "pregunta -> trabajo asíncrono con respuesta")
 r = requests.post(f"{B}/api/agy", cookies=ck, headers=hd, json={"prompt": "hola", "confirm": True}); jid = r.json()["job"]; time.sleep(0.5)
 ok("resp[agy/do]" in requests.get(f"{B}/api/job/{jid}", cookies=ck).json()["text"], "acción antigua agy -> cerebro agy en modo actuar")
 ok(requests.post(f"{B}/api/inexistente", cookies=ck, headers=hd).status_code == 404, "acción desconocida -> 404")
@@ -161,7 +161,7 @@ ok(requests.post(f"{B}/api/estado", cookies=ck, headers=hd).status_code == 200, 
 
 # ---------------------------------------------------------------- API nueva
 def api(a, body=None): return requests.post(f"{B}/api/{a}", cookies=ck, headers=hd, json=body or {})
-ok(api("modelos").json()["backends"][0]["id"] == "kimi", "modelos")
+ok(api("modelos").json()["backends"][0]["id"] == "claude", "modelos: Claude el primero (predeterminado)")
 ok(api("watchdog").json()["activo"] is True, "watchdog")
 ok(api("serie").json()["puntos"][1]["t"] == 40.0, "serie (historial del vigilante)")
 ok(api("procesos").json()["top"][0]["pid"] == 4, "procesos")

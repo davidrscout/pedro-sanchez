@@ -11,6 +11,7 @@ j.HOME = tmp
 j.WORK = tmp / "workspace"
 j.WORK.mkdir()
 j.STATE = tmp / "state.json"
+j.STATE_KIMI = tmp / "state_kimi.json"
 j.TELEMETRIA = tmp / "telemetria.jsonl"
 j.LOG = tmp / "jarvis.log"
 j.SYSTEM_FILE = tmp / "system.md"
@@ -70,7 +71,7 @@ ok("  - Bash\n" not in agente and "  - Edit\n" not in agente and "  - Write\n" n
 ok("  - mcp__pedro__*\n" in agente and "${base_prompt}" in agente, "agente Leer incluye solo el MCP de Pedro y el prompt base")
 mcp = json.loads((j.WORK / ".kimi-code" / "mcp.json").read_text(encoding="utf-8"))
 ok(mcp["mcpServers"]["pedro"]["env"]["PEDRO_MODO"] == "ask", "MCP arranca en modo Leer")
-ok(j.load_state()["kimi_session"] == "session_1", "guarda el session_id real")
+ok(j.load_state_kimi()["kimi_session"] == "session_1", "guarda el session_id real")
 
 # Mismo modo: reanuda; otro modo: perfil nuevo. Después vuelve a reanudar.
 j.run_kimi("siguiente", "ask")
@@ -87,20 +88,20 @@ j.run_kimi("otra", "do")
 ok(args_n()[args_n().index("--session") + 1] == "session_3", "Actuar también reanuda")
 
 # Tarea efímera: carpeta aislada y estado principal intacto.
-antes = j.STATE.read_text(encoding="utf-8")
+antes = j.STATE_KIMI.read_text(encoding="utf-8")
 j.run_kimi("tarea", "ask", efimera=True)
 ok("_efimera" in calls[-1].kwargs["cwd"] and "--session" not in args_n(), "tarea efímera usa carpeta y sesión aisladas")
-ok(j.STATE.read_text(encoding="utf-8") == antes, "tarea efímera no toca la conversación principal")
+ok(j.STATE_KIMI.read_text(encoding="utf-8") == antes, "tarea efímera no toca la conversación principal")
 
 # Una sesión que ya no existe se reintenta una vez desde cero.
 fallos.append(True)
 ok(j.run_kimi("recupera", "do") == "respuesta", "recupera una sesión perdida")
 ok("--session" in args_n(-2) and "--agent-file" in args_n(-1), "el fallo de reanudación reintenta con sesión nueva")
-ok(j.load_state()["kimi_session"] == f"session_{len(calls)}", "guarda la sesión recuperada")
+ok(j.load_state_kimi()["kimi_session"] == f"session_{len(calls)}", "guarda la sesión recuperada")
 
 j.nueva_conversacion()
-ok(not j.load_state()["started"] and j.load_state()["kimi_session"] is None, "/nueva reinicia la continuidad")
-j.STATE.write_text(json.dumps({"session": "claude-antiguo", "started": True}), encoding="utf-8")
+ok(not j.load_state_kimi()["started"] and j.load_state_kimi()["kimi_session"] is None, "/nueva reinicia la continuidad")
+j.STATE_KIMI.write_text(json.dumps({"session": "claude-antiguo", "started": True}), encoding="utf-8")
 j.run_kimi("migracion", "ask")
 ok("--session" not in args_n() and "--agent-file" in args_n(), "el estado antiguo de Claude no se reutiliza")
 reg = json.loads(j.TELEMETRIA.read_text(encoding="utf-8").splitlines()[-1])
