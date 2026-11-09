@@ -32,3 +32,6 @@ dev_proto*.py
 
 # Equipos y secreto del puente entre PCs
 equipos.json
+
+# Secreto de la app nativa Pedro (iPhone)
+app_pedro.json

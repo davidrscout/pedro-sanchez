@@ -48,7 +48,7 @@ SESS = {"sid": None, "t0": 0, "last": 0}
 JOBS = {}
 TUN = {"proc": None, "url": None, "since": 0}
 TUNNEL_METRICS_PORT = 20245   # puerto fijo de métricas de cloudflared (/ready)
-LOCKS = {"tun": threading.Lock(), "state": threading.Lock(), "srv": threading.Lock()}
+LOCKS = {"tun": threading.Lock(), "state": threading.Lock(), "srv": threading.Lock(), "app": threading.Lock()}
 SERVER = {"httpd": None}
 LINK_TIMES = []
 
@@ -375,7 +375,8 @@ def janitor():
                 dead_since = None
             if SESS["sid"] and (now - SESS["last"] > SESSION_IDLE or now - SESS["t0"] > SESSION_MAX):
                 SESS["sid"] = None
-            live_tok = any((not v["dead"]) and now - v["t"] < TOKEN_TTL for v in TOKENS.values())
+            live_tok = (any((not v["dead"]) and now - v["t"] < TOKEN_TTL for v in TOKENS.values())
+                        or any(now - v < APP_TOKEN_TTL for v in list(APP_TOKENS.values())))
             busy = bool(SESS["sid"]) or live_tok
             if TUN["proc"] and not busy:
                 idle_since = idle_since or now
@@ -469,6 +470,17 @@ class Handler(BaseHTTPRequestHandler):
             # Red de seguridad: ?v=1 en el enlace = interfaz anterior (cookie ui=v1 hasta que se pida un enlace sin ?v=1)
             ck = "ui=v1; Path=/; SameSite=Lax; Max-Age=86400" if v1 else "ui=; Path=/; SameSite=Lax; Max-Age=0"
             return self._send(200, page, "text/html; charset=utf-8", extra={"Set-Cookie": ck})
+        if path.startswith("/a/"):    # entrada directa de la app nativa: token de un uso dado por /puente/app
+            ip = self._ip()
+            if not app_token_usar(path[3:]) or lock_status() or ip_blocked(ip):
+                return self._send(404, "no")
+            now = time.time()
+            SESS.update({"sid": secrets.token_urlsafe(32), "t0": now, "last": now})
+            log(f"login web OK desde la app Pedro ({ip})")
+            H.get("alert", lambda m: None)("Entrada desde la app Pedro (iPhone).")
+            return self._send(302, "", extra={"Location": "/app", "Set-Cookie": [
+                f"sid={SESS['sid']}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age={SESSION_MAX}",
+                "ui=; Path=/; SameSite=Lax; Max-Age=0"]})
         if path.startswith("/s/"):
             return self._static(path[3:])
         if path == "/app":
@@ -894,6 +906,8 @@ class Puente(BaseHTTPRequestHandler):
         return self._out(404, "no")
 
     def do_POST(self):
+        if self.path.split("?")[0] == "/puente/app" and self._de_tailscale():
+            return self._app()
         if self.path.split("?")[0] != "/puente/enlace" or not self._de_tailscale():
             return self._out(404, "no")
         sec = equipos_cfg().get("secreto", "")
@@ -912,12 +926,104 @@ class Puente(BaseHTTPRequestHandler):
         log(f"puente: enlace dado a {self.client_address[0]}" if url else f"puente: sin enlace ({err})")
         return self._out(200 if url else 503, {"url": url} if url else {"error": err})
 
+    def _app(self):
+        """App nativa «Pedro» del iPhone: entrada directa sin Telegram ni PIN (Face ID + secreto en el Keychain del móvil)."""
+        ip = self.client_address[0]
+        sec = app_secreto()
+        if not sec:
+            return self._out(404, "no")          # sin secreto configurado, el endpoint no existe
+        why = lock_status() or ip_blocked(ip)
+        if why:
+            return self._out(429, {"error": why})
+        ts = self.headers.get("X-Ts", "")
+        nonce = self.headers.get("X-Nonce", "")
+        firma = self.headers.get("X-Firma", "")
+        try:
+            fresco = abs(time.time() - int(ts)) <= FIRMA_VENTANA
+        except Exception:
+            fresco = False
+        if not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", nonce):
+            return self._out(403, {"error": "firma"})
+        if not fresco:                           # reloj del móvil desfasado o firma vieja: no cuenta como ataque
+            log(f"puente app: firma CADUCADA desde {ip}")
+            return self._out(403, {"error": "caducada", "ahora": int(time.time())})
+        if not hmac.compare_digest(firma, _firma_app(sec, ts, nonce)):
+            fails, blocked = register_fail(ip)
+            log(f"puente: firma MALA (app) desde {ip} ({fails}/{IP_FAIL_LIMIT}, bloqueada={blocked})")
+            if blocked:
+                H.get("alert", lambda m: None)(f"Puente de la app: IP {ip} bloqueada 24 h por firmas malas.")
+            return self._out(403, {"error": "firma"})
+        with LOCKS["app"]:
+            now = time.time()
+            for k in [k for k, v in APP_FIRMAS.items() if now - v > 2 * FIRMA_VENTANA]:
+                APP_FIRMAS.pop(k, None)
+            if nonce in APP_FIRMAS:              # anti-repetición: cada nonce (y su firma) vale una vez
+                log(f"puente: firma REPETIDA (app) desde {ip}")
+                return self._out(403, {"error": "repetida"})
+            APP_FIRMAS[nonce] = now
+            APP_TIMES[:] = [t for t in APP_TIMES if now - t < 3600]
+            if len(APP_TIMES) >= APP_MAX_HORA:
+                return self._out(429, {"error": "Demasiadas entradas desde la app en la última hora."})
+            APP_TIMES.append(now)
+        try:
+            base = ensure_tunnel()
+        except Exception as e:
+            log(f"puente app: sin túnel ({type(e).__name__})")
+            return self._out(503, {"error": f"No pude abrir el túnel ({type(e).__name__})."})
+        register_ok(ip)
+        tok = secrets.token_urlsafe(32)
+        with LOCKS["app"]:
+            for k in [k for k, v in APP_TOKENS.items() if time.time() - v > APP_TOKEN_TTL]:
+                APP_TOKENS.pop(k, None)
+            APP_TOKENS[tok] = time.time()
+        log(f"puente app: entrada concedida a {ip}")
+        return self._out(200, {"url": f"{base}/a/{tok}"})
+
+
+# ---------------------------------------------------------------- app nativa «Pedro» (iPhone)
+# Secreto propio y distinto del de equipos, en app_pedro.json (fuera del repo). Sin él, /puente/app no existe.
+# Rotarlo: `python webpanel.py app-secreto` (deja el nuevo también en la carpeta de la app; hay que reinstalarla).
+APP_F = HOME / "app_pedro.json"
+APP_SECRETO_DESTINO = Path(r"C:\Personal\iphone_xtool\Pedro\.secreto_app")
+APP_TOKEN_TTL = 60
+APP_MAX_HORA = 30
+APP_TOKENS = {}     # token de un uso -> momento de creación
+APP_FIRMAS = {}     # nonces ya usados (anti-repetición) -> momento
+APP_TIMES = []
+
+
+def app_secreto():
+    return str(_read_json(APP_F, {}).get("secreto", ""))
+
+
+def _firma_app(secreto, ts, nonce):
+    """HMAC-SHA256, clave = el secreto tal cual (64 caracteres hex, sus bytes ASCII), mensaje = «pedro-app|<ts>|<nonce>»."""
+    return hmac.new(secreto.encode(), f"pedro-app|{ts}|{nonce}".encode(), hashlib.sha256).hexdigest()
+
+
+def app_token_usar(tok):
+    """True si el token existe, no ha caducado y no se había usado; lo consume en cualquier caso."""
+    with LOCKS["app"]:
+        t0 = APP_TOKENS.pop(tok, None)
+    return t0 is not None and time.time() - t0 <= APP_TOKEN_TTL
+
+
+def app_secreto_nuevo():
+    sec = secrets.token_hex(32)
+    APP_F.write_text(json.dumps({"secreto": sec, "creado": time.strftime("%Y-%m-%d %H:%M")}), encoding="utf-8")
+    try:
+        APP_SECRETO_DESTINO.write_text(sec, encoding="utf-8")
+        destino = str(APP_SECRETO_DESTINO)
+    except Exception:
+        destino = None
+    return destino
+
 
 def puente_vigia():
     """Escucha en la IP de Tailscale en cuanto exista (Tailscale puede arrancar después que Pedro)."""
     while True:
         try:
-            if equipos_cfg().get("secreto"):
+            if equipos_cfg().get("secreto") or app_secreto():
                 ip = ts_ip()
                 if ip and ip != PUENTE["ip"]:
                     if PUENTE["httpd"]:
@@ -959,6 +1065,9 @@ if __name__ == "__main__":
         print("Guardalo en tu gestor de contrasenas. No se vuelve a mostrar. Reinicia Jarvis para aplicarlo.")
     elif cmd == "secreto":
         print(secrets.token_urlsafe(32))
+    elif cmd == "app-secreto":       # crea/rota el secreto de la app Pedro; NO lo imprime
+        d = app_secreto_nuevo()
+        print("Secreto de la app guardado en app_pedro.json" + (f" y en {d}" if d else "") + ". Reinicia Jarvis y reinstala la app.")
     elif cmd == "devices":
         devs = _read_json(DEV_F, {})
         for hh, v in devs.items():
