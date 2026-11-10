@@ -403,6 +403,7 @@ CSP = ("default-src 'none'; img-src 'self' blob: data:; font-src 'self' data:; m
 class Handler(BaseHTTPRequestHandler):
     server_version = "J"
     sys_version = ""
+    COOKIE_SECURE = "; Secure"     # por el túnel (HTTPS); el Puente (HTTP dentro de Tailscale) lo quita
 
     def log_message(self, *a):
         pass
@@ -477,9 +478,9 @@ class Handler(BaseHTTPRequestHandler):
             now = time.time()
             SESS.update({"sid": secrets.token_urlsafe(32), "t0": now, "last": now})
             log(f"login web OK desde la app Pedro ({ip})")
-            H.get("alert", lambda m: None)("Entrada desde la app Pedro (iPhone).")
+            H.get("alert", lambda m: None)(f"Entrada desde la app Pedro (iPhone) desde {ip}.")
             return self._send(302, "", extra={"Location": "/app", "Set-Cookie": [
-                f"sid={SESS['sid']}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age={SESSION_MAX}",
+                f"sid={SESS['sid']}; HttpOnly{self.COOKIE_SECURE}; SameSite=Strict; Path=/; Max-Age={SESSION_MAX}",
                 "ui=; Path=/; SameSite=Lax; Max-Age=0"]})
         if path.startswith("/s/"):
             return self._static(path[3:])
@@ -876,12 +877,51 @@ def puente_pedir(nombre):
     return (d.get("url"), None) if d.get("url") else (None, d.get("error") or "Sin enlace.")
 
 
-class Puente(BaseHTTPRequestHandler):
-    server_version = "J"
-    sys_version = ""
+class Puente(Handler):
+    """Servidor en la IP de Tailscale. Solo atiende a 100.64.0.0/10; a cualquier otro, 404.
+    - /ping, /puente/enlace (otro PC de David) y /puente/app (app nativa Pedro): propios del puente.
+    - Rutas del panel para la app nativa (sin túnel): GET /a/<tok>, /app, /s/*, /api/job/<id>, /gone y
+      POST /api/* (incluido /api/stt) y /logout. Se reutiliza el Handler tal cual (misma sesión SESS y mismas
+      comprobaciones); aquí solo cambian el host/origen aceptados, la IP (sin Cf-Connecting-Ip) y la cookie sin
+      «Secure» (va por HTTP, pero cifrada por WireGuard). /t/ y /login NO existen aquí: el flujo web sigue por el túnel."""
+    COOKIE_SECURE = ""
+    RUTAS_GET = ("/a/", "/s/", "/api/job/")
+    RUTAS_GET_EXACTAS = ("/app", "/gone")
 
-    def log_message(self, *a):
-        pass
+    def _yo(self):
+        ip, port = self.server.server_address[:2]
+        return ip, port
+
+    def _host_ok(self):
+        ip, port = self._yo()
+        return self.headers.get("Host", "").lower() in (ip, f"{ip}:{port}")
+
+    def _origin_ok(self):
+        ip, port = self._yo()
+        o = self.headers.get("Origin")
+        return (not o) or o == f"http://{ip}:{port}"
+
+    def _ip(self):
+        return self.client_address[0]     # aquí no hay Cloudflare: nunca fiarse de Cf-Connecting-Ip
+
+    def send_response(self, code, message=None):
+        self._codigo = code
+        super().send_response(code, message)
+
+    def _medido(self, fn):
+        """Una línea de log por llamada de la app: método, ruta (sin tokens), código y ms."""
+        t0 = time.time()
+        self._codigo = None
+        try:
+            return fn()
+        finally:
+            ruta = self.path.split("?")[0]
+            if ruta.startswith("/a/"):
+                ruta = "/a/…"
+            elif ruta.startswith("/api/job/"):
+                ruta = "/api/job/…"
+            if not ruta.startswith("/s/"):
+                log(f"app: {self.command} {ruta} {self._codigo} {int((time.time() - t0) * 1000)} ms ({self.client_address[0]})")
 
     def _out(self, code, obj):
         txt = isinstance(obj, str)
@@ -901,14 +941,24 @@ class Puente(BaseHTTPRequestHandler):
             return False
 
     def do_GET(self):
-        if self.path.split("?")[0] == "/ping" and self._de_tailscale():
+        if not self._de_tailscale():
+            return self._out(404, "no")
+        p = self.path.split("?")[0]
+        if p == "/ping":
             return self._out(200, "pong")
+        if p in self.RUTAS_GET_EXACTAS or p.startswith(self.RUTAS_GET):
+            return self._medido(super().do_GET)
         return self._out(404, "no")
 
     def do_POST(self):
-        if self.path.split("?")[0] == "/puente/app" and self._de_tailscale():
-            return self._app()
-        if self.path.split("?")[0] != "/puente/enlace" or not self._de_tailscale():
+        if not self._de_tailscale():
+            return self._out(404, "no")
+        p = self.path.split("?")[0]
+        if p == "/puente/app":
+            return self._medido(self._app)
+        if p.startswith("/api/") or p == "/logout":
+            return self._medido(super().do_POST)
+        if p != "/puente/enlace":
             return self._out(404, "no")
         sec = equipos_cfg().get("secreto", "")
         ts = self.headers.get("X-Ts", "")
@@ -965,11 +1015,8 @@ class Puente(BaseHTTPRequestHandler):
             if len(APP_TIMES) >= APP_MAX_HORA:
                 return self._out(429, {"error": "Demasiadas entradas desde la app en la última hora."})
             APP_TIMES.append(now)
-        try:
-            base = ensure_tunnel()
-        except Exception as e:
-            log(f"puente app: sin túnel ({type(e).__name__})")
-            return self._out(503, {"error": f"No pude abrir el túnel ({type(e).__name__})."})
+        yo, port = self._yo()
+        base = f"http://{yo}:{port}"           # 10/11: por Tailscale directo, sin abrir el túnel público
         register_ok(ip)
         tok = secrets.token_urlsafe(32)
         with LOCKS["app"]:

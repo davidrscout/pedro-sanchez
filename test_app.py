@@ -18,10 +18,15 @@ w.APP_F, w.APP_SECRETO_DESTINO = tmp / "app_pedro.json", tmp / ".secreto_app"
 PUERTO_WEB, PUERTO_PUENTE, PUERTO_FUERA = 18811, 18812, 18813
 w.PORT = PUERTO_WEB
 avisos = []
-w.H.update({"log": lambda m: None, "alert": lambda m: avisos.append(m)})
-w.log = lambda m: None
+w.H.update({"log": lambda m: None, "alert": lambda m: avisos.append(m), "estado": lambda: "CPU ok"})
+registro = []
+w.log = lambda m: registro.append(m)
 w.save_state({"ips": {}, "recent": [], "pause_until": 0, "active_link": None})
-w.ensure_tunnel = lambda: f"http://127.0.0.1:{PUERTO_WEB}"
+tuneles = []
+def _sin_tunel():
+    tuneles.append(1)
+    raise RuntimeError("la app NO debe abrir el túnel")
+w.ensure_tunnel = _sin_tunel
 fallos = 0
 
 
@@ -65,12 +70,15 @@ ok(sec != (w.equipos_cfg().get("secreto") or ""), "secreto distinto del de equip
 # ---- firma buena -> url de un uso -> sesión
 r = pedir()
 ok(r.status_code == 200 and "/a/" in r.json().get("url", ""), "firma buena -> 200 con url /a/<token>")
+ok(r.json()["url"].startswith(f"http://127.0.0.1:{PUERTO_PUENTE}/a/"), "la url es la IP:puerto del propio puente (Tailscale), no el túnel")
+ok(not tuneles, "/puente/app NO llama a ensure_tunnel()")
 url = r.json()["url"]
 s = requests.Session()
 r2 = s.get(url, allow_redirects=False, timeout=5)
 ok(r2.status_code == 302 and r2.headers.get("Location") == "/app", "GET /a/<token> -> 302 a /app")
 ok("sid=" in r2.headers.get("Set-Cookie", "") and "HttpOnly" in r2.headers.get("Set-Cookie", ""), "pone la cookie de sesión sid (HttpOnly)")
-ok(avisos and "app Pedro" in avisos[-1], "avisa a Telegram de la entrada desde la app")
+ok(avisos and "app Pedro" in avisos[-1] and "127.0.0.1" in avisos[-1], "avisa a Telegram de la entrada desde la app, con la IP de origen")
+ok("Secure" not in r2.headers.get("Set-Cookie", ""), "por el puente (HTTP en Tailscale) la cookie sid va sin «Secure»")
 sid = r2.cookies.get("sid")
 ok(requests.post(f"http://127.0.0.1:{PUERTO_WEB}/api/estado", cookies={"sid": sid}, headers={"X-Jarvis": "1"}, timeout=5).status_code != 401,
    "la sesión vale para la API como tras un PIN correcto")
@@ -121,6 +129,63 @@ w.LOCK_F.unlink()
 w.TOKENS["tg"] = {"t": time.time(), "fails": 0, "dead": False}
 pedir()
 ok(not w.TOKENS["tg"]["dead"], "pedir entrada desde la app NO anula el enlace de Telegram activo")
+
+# ---------------------------------------------------------------- 10/11: panel servido por el puente (sin túnel)
+w.save_state({"ips": {}, "recent": [], "pause_until": 0, "active_link": None})
+P = f"http://127.0.0.1:{PUERTO_PUENTE}"
+url = pedir().json()["url"]
+r = requests.get(url, allow_redirects=False, timeout=5)
+sid = r.cookies.get("sid")
+ok(r.status_code == 302 and sid, "puente: GET /a/<token> -> 302 con sid")
+CK = {"Cookie": f"sid={sid}"}                       # la app la manda a mano en la cabecera Cookie
+ok(requests.get(f"{P}/app", headers=CK, timeout=5).status_code == 200, "puente: GET /app con la cookie a mano -> 200")
+ok(requests.get(f"{P}/app", allow_redirects=False, timeout=5).status_code == 302, "puente: GET /app sin sesión -> 302 a /gone")
+ok(requests.get(f"{P}/gone", timeout=5).status_code == 401, "puente: /gone -> 401")
+ok(requests.get(f"{P}/s/app/app.css", timeout=5).status_code == 200, "puente: estáticos /s/ -> 200")
+HJ = dict(CK, **{"X-Jarvis": "1"})
+r = requests.post(f"{P}/api/estado", headers=HJ, json={}, timeout=5)
+ok(r.status_code == 200, "puente: POST /api/estado con sesión -> 200")
+ok(requests.post(f"{P}/api/estado", headers={"X-Jarvis": "1"}, json={}, timeout=5).status_code == 401, "puente: POST /api/* sin sesión -> 401")
+ok(requests.post(f"{P}/api/estado", headers=CK, json={}, timeout=5).status_code == 403, "puente: POST /api/* sin X-Jarvis -> 403")
+w.JOBS["j1"] = {"state": "done", "text": "hola"}
+ok(requests.get(f"{P}/api/job/j1", headers=CK, timeout=5).json().get("text") == "hola", "puente: GET /api/job/<id> con sesión")
+ok(requests.get(f"{P}/api/job/j1", timeout=5).status_code == 401, "puente: GET /api/job sin sesión -> 401")
+ok(requests.post(f"{P}/api/stt", headers=HJ, data=b"", timeout=5).status_code != 404, "puente: POST /api/stt existe")
+ok(requests.post(f"{P}/api/estado", headers=dict(HJ, Origin="https://malo.com"), json={}, timeout=5).status_code == 421, "puente: Origin ajeno -> 421")
+ok(requests.post(f"{P}/api/estado", headers=dict(HJ, Origin=P), json={}, timeout=5).status_code == 200, "puente: Origin propio (http://IP:puerto) -> 200")
+ok(requests.post(f"{P}/api/estado", headers=dict(HJ, Host="x.trycloudflare.com"), json={}, timeout=5).status_code == 421, "puente: Host ajeno -> 421")
+ok(requests.get(f"{P}/t/loquesea", timeout=5).status_code == 404, "puente: /t/ (flujo web) NO existe -> 404")
+ok(requests.post(f"{P}/login", json={}, timeout=5).status_code == 404, "puente: /login (PIN) NO existe -> 404")
+ok(requests.get(f"{P}/api/estado", timeout=5).status_code == 404, "puente: ruta no listada -> 404")
+ok(any(m.startswith("app: POST /api/estado 200 ") and m.rstrip().endswith("(127.0.0.1)") for m in registro), "log por llamada: acción, código, ms e IP")
+import re as _re
+ok(any(m.startswith("app: GET /a/… 302") for m in registro) and not any(_re.search(r"/a/[A-Za-z0-9_-]{20,}", m) for m in registro),
+   "el log no guarda tokens")
+# IP falsa en Cf-Connecting-Ip: el puente la ignora
+url = pedir().json()["url"]
+with w.LOCKS["state"]:
+    st = w.load_state(); st["ips"]["127.0.0.1"] = {"fails": 0, "blocked_until": time.time() + 600}; w.save_state(st)
+ok(requests.get(url, headers={"Cf-Connecting-Ip": "8.8.8.8"}, allow_redirects=False, timeout=5).status_code == 404,
+   "puente: Cf-Connecting-Ip falsa no salta el bloqueo de IP")
+w.save_state({"ips": {}, "recent": [], "pause_until": 0, "active_link": None})
+ok(requests.post(f"{P}/logout", headers=HJ, json={}, timeout=5).status_code == 200, "puente: POST /logout -> 200")
+ok(requests.post(f"{P}/api/estado", headers=HJ, json={}, timeout=5).status_code == 401, "tras /logout la sesión ya no vale")
+# fuera de Tailscale: todo 404
+F = f"http://127.0.0.1:{PUERTO_FUERA}"
+url = pedir().json()["url"].replace(str(PUERTO_PUENTE), str(PUERTO_FUERA))
+ok(requests.get(url, allow_redirects=False, timeout=5).status_code == 404, "fuera de Tailscale: GET /a/<token válido> -> 404")
+ok(requests.get(f"{F}/app", headers=CK, timeout=5).status_code == 404, "fuera de Tailscale: GET /app -> 404")
+ok(requests.get(f"{F}/s/app/app.css", timeout=5).status_code == 404, "fuera de Tailscale: /s/ -> 404")
+ok(requests.post(f"{F}/api/estado", headers=HJ, json={}, timeout=5).status_code == 404, "fuera de Tailscale: POST /api/* -> 404")
+ok(requests.post(f"{F}/api/stt", headers=HJ, data=b"", timeout=5).status_code == 404, "fuera de Tailscale: POST /api/stt -> 404")
+ok(requests.get(f"{F}/api/job/j1", headers=CK, timeout=5).status_code == 404, "fuera de Tailscale: GET /api/job -> 404")
+ok(requests.post(f"{F}/logout", headers=HJ, json={}, timeout=5).status_code == 404, "fuera de Tailscale: POST /logout -> 404")
+ok(requests.get(f"{F}/ping", timeout=5).status_code == 404, "fuera de Tailscale: /ping -> 404")
+# el camino del túnel sigue: un token también entra por el servidor del túnel (con cookie Secure)
+tok = pedir().json()["url"].rsplit("/", 1)[1]
+r = requests.get(f"http://127.0.0.1:{PUERTO_WEB}/a/{tok}", allow_redirects=False, timeout=5)
+ok(r.status_code == 302 and "Secure" in r.headers.get("Set-Cookie", ""), "túnel: /a/ sigue funcionando y su cookie lleva «Secure»")
+ok(not tuneles, "ninguna llamada de la app abrió el túnel")
 
 print("TODAS LAS PRUEBAS DE LA APP OK" if not fallos else f"{fallos} FALLOS")
 raise SystemExit(1 if fallos else 0)
