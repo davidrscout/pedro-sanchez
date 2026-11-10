@@ -405,6 +405,10 @@ class Handler(BaseHTTPRequestHandler):
     sys_version = ""
     COOKIE_SECURE = "; Secure"     # por el túnel (HTTPS); el Puente (HTTP dentro de Tailscale) lo quita
 
+    def _ips_propias(self):
+        """IPs del propio PC (para distinguir una prueba hecha desde aquí de una entrada real del iPhone)."""
+        return {PUENTE.get("ip")} - {None}
+
     def log_message(self, *a):
         pass
 
@@ -478,7 +482,10 @@ class Handler(BaseHTTPRequestHandler):
             now = time.time()
             SESS.update({"sid": secrets.token_urlsafe(32), "t0": now, "last": now})
             log(f"login web OK desde la app Pedro ({ip})")
-            H.get("alert", lambda m: None)(f"Entrada desde la app Pedro (iPhone) desde {ip}.")
+            aviso = (f"Entrada de prueba desde este PC ({ip})." if ip in self._ips_propias()
+                     else f"Entrada desde la app Pedro (iPhone) desde {ip}.")
+            # Telegram es síncrono (hasta 15 s si falla): fuera del camino crítico, como stop_tunnel() en /logout
+            threading.Thread(target=lambda: H.get("alert", lambda m: None)(aviso), daemon=True).start()
             return self._send(302, "", extra={"Location": "/app", "Set-Cookie": [
                 f"sid={SESS['sid']}; HttpOnly{self.COOKIE_SECURE}; SameSite=Strict; Path=/; Max-Age={SESSION_MAX}",
                 "ui=; Path=/; SameSite=Lax; Max-Age=0"]})
@@ -887,10 +894,14 @@ class Puente(Handler):
     COOKIE_SECURE = ""
     RUTAS_GET = ("/a/", "/s/", "/api/job/")
     RUTAS_GET_EXACTAS = ("/app", "/gone")
+    RUTAS_FRECUENTES = ("/api/vivo", "/api/raton")   # la pantalla remota, ~3/s: solo si fallan o tardan > 1500 ms
 
     def _yo(self):
         ip, port = self.server.server_address[:2]
         return ip, port
+
+    def _ips_propias(self):
+        return super()._ips_propias() | {self._yo()[0]}
 
     def _host_ok(self):
         ip, port = self._yo()
@@ -920,8 +931,10 @@ class Puente(Handler):
                 ruta = "/a/…"
             elif ruta.startswith("/api/job/"):
                 ruta = "/api/job/…"
-            if not ruta.startswith("/s/"):
-                log(f"app: {self.command} {ruta} {self._codigo} {int((time.time() - t0) * 1000)} ms ({self.client_address[0]})")
+            ms = int((time.time() - t0) * 1000)
+            normal = self._codigo is not None and 200 <= self._codigo < 300 and ms <= 1500
+            if not ruta.startswith("/s/") and not (ruta in self.RUTAS_FRECUENTES and normal):
+                log(f"app: {self.command} {ruta} {self._codigo} {ms} ms ({self.client_address[0]})")
 
     def _out(self, code, obj):
         txt = isinstance(obj, str)

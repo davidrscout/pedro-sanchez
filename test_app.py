@@ -18,7 +18,8 @@ w.APP_F, w.APP_SECRETO_DESTINO = tmp / "app_pedro.json", tmp / ".secreto_app"
 PUERTO_WEB, PUERTO_PUENTE, PUERTO_FUERA = 18811, 18812, 18813
 w.PORT = PUERTO_WEB
 avisos = []
-w.H.update({"log": lambda m: None, "alert": lambda m: avisos.append(m), "estado": lambda: "CPU ok"})
+w.H.update({"log": lambda m: None, "alert": lambda m: avisos.append(m), "estado": lambda: "CPU ok",
+           "vivo": lambda w_, q_: b"\xff\xd8JPEG", "raton": lambda d: {"ok": True}})
 registro = []
 w.log = lambda m: registro.append(m)
 w.save_state({"ips": {}, "recent": [], "pause_until": 0, "active_link": None})
@@ -28,6 +29,14 @@ def _sin_tunel():
     raise RuntimeError("la app NO debe abrir el túnel")
 w.ensure_tunnel = _sin_tunel
 fallos = 0
+
+
+def espera_aviso(n_antes, seg=1.0):
+    """El aviso de /a/ sale en un hilo: espera (hasta 1 s) a que llegue."""
+    t0 = time.time()
+    while len(avisos) <= n_antes and time.time() - t0 < seg:
+        time.sleep(0.02)
+    return avisos[-1] if len(avisos) > n_antes else None
 
 
 def ok(c, txt):
@@ -74,10 +83,11 @@ ok(r.json()["url"].startswith(f"http://127.0.0.1:{PUERTO_PUENTE}/a/"), "la url e
 ok(not tuneles, "/puente/app NO llama a ensure_tunnel()")
 url = r.json()["url"]
 s = requests.Session()
+n_avisos = len(avisos)
 r2 = s.get(url, allow_redirects=False, timeout=5)
 ok(r2.status_code == 302 and r2.headers.get("Location") == "/app", "GET /a/<token> -> 302 a /app")
 ok("sid=" in r2.headers.get("Set-Cookie", "") and "HttpOnly" in r2.headers.get("Set-Cookie", ""), "pone la cookie de sesión sid (HttpOnly)")
-ok(avisos and "app Pedro" in avisos[-1] and "127.0.0.1" in avisos[-1], "avisa a Telegram de la entrada desde la app, con la IP de origen")
+ok(espera_aviso(n_avisos) == "Entrada de prueba desde este PC (127.0.0.1).", "entrada desde la IP del propio PC (la del puente) -> aviso «de prueba»")
 ok("Secure" not in r2.headers.get("Set-Cookie", ""), "por el puente (HTTP en Tailscale) la cookie sid va sin «Secure»")
 sid = r2.cookies.get("sid")
 ok(requests.post(f"http://127.0.0.1:{PUERTO_WEB}/api/estado", cookies={"sid": sid}, headers={"X-Jarvis": "1"}, timeout=5).status_code != 401,
@@ -186,6 +196,38 @@ tok = pedir().json()["url"].rsplit("/", 1)[1]
 r = requests.get(f"http://127.0.0.1:{PUERTO_WEB}/a/{tok}", allow_redirects=False, timeout=5)
 ok(r.status_code == 302 and "Secure" in r.headers.get("Set-Cookie", ""), "túnel: /a/ sigue funcionando y su cookie lleva «Secure»")
 ok(not tuneles, "ninguna llamada de la app abrió el túnel")
+
+# ---------------------------------------------------------------- 10/11: aviso fuera del camino crítico
+n_avisos = len(avisos)
+lento_alerta = w.H["alert"]
+w.H["alert"] = lambda m: (time.sleep(3), avisos.append(m))
+url = pedir().json()["url"]
+t0 = time.time()
+r = requests.get(url, allow_redirects=False, timeout=10)
+ok(r.status_code == 302 and time.time() - t0 < 0.5, "/a/ responde sin esperar a Telegram (aviso que tarda 3 s)")
+w.H["alert"] = lento_alerta
+tok = pedir().json()["url"].rsplit("/", 1)[1]
+n_avisos = len(avisos)
+requests.get(f"http://127.0.0.1:{PUERTO_WEB}/a/{tok}", headers={"Cf-Connecting-Ip": "100.90.1.2"}, allow_redirects=False, timeout=5)
+ok(espera_aviso(n_avisos) == "Entrada desde la app Pedro (iPhone) desde 100.90.1.2.", "IP que no es la del PC -> aviso normal con la IP")
+
+# ---------------------------------------------------------------- 10/11: llamadas frecuentes del mando en el log
+registro.clear()
+url = pedir().json()["url"]
+sid = requests.get(url, allow_redirects=False, timeout=5).cookies.get("sid")
+HJ = {"Cookie": f"sid={sid}", "X-Jarvis": "1"}
+ok(all(requests.post(f"{P}/api/vivo", headers=HJ, json={}, timeout=5).status_code == 200 for _ in range(3)), "puente: /api/vivo -> 200")
+ok(all(requests.post(f"{P}/api/raton", headers=HJ, json={"a": "mover"}, timeout=5).status_code == 200 for _ in range(3)), "puente: /api/raton -> 200")
+ok(not any("/api/vivo" in m or "/api/raton" in m for m in registro), "log: /api/vivo y /api/raton con 2xx y rápidos NO se registran")
+requests.post(f"{P}/api/vivo", headers={"X-Jarvis": "1"}, json={}, timeout=5)
+ok(any(m.startswith("app: POST /api/vivo 401") for m in registro), "log: /api/vivo con error SÍ se registra")
+rapido = w.H["raton"]
+w.H["raton"] = lambda d: (time.sleep(1.6), {"ok": True})[1]
+requests.post(f"{P}/api/raton", headers=HJ, json={}, timeout=5)
+w.H["raton"] = rapido
+ok(any(m.startswith("app: POST /api/raton 200") for m in registro), "log: /api/raton lento (>1500 ms) SÍ se registra")
+requests.post(f"{P}/api/estado", headers=HJ, json={}, timeout=5)
+ok(any(m.startswith("app: POST /api/estado 200") for m in registro), "log: las demás llamadas se siguen registrando siempre")
 
 print("TODAS LAS PRUEBAS DE LA APP OK" if not fallos else f"{fallos} FALLOS")
 raise SystemExit(1 if fallos else 0)
