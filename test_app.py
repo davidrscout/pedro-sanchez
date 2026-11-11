@@ -24,10 +24,11 @@ registro = []
 w.log = lambda m: registro.append(m)
 w.save_state({"ips": {}, "recent": [], "pause_until": 0, "active_link": None})
 tuneles = []
-def _sin_tunel():
+TUNEL = f"http://127.0.0.1:{PUERTO_PUENTE}"   # 11/11: /puente/app vuelve a usar el túnel (app instalada fuerza https)
+def _con_tunel():
     tuneles.append(1)
-    raise RuntimeError("la app NO debe abrir el túnel")
-w.ensure_tunnel = _sin_tunel
+    return TUNEL
+w.ensure_tunnel = _con_tunel
 fallos = 0
 
 
@@ -80,7 +81,7 @@ ok(sec != (w.equipos_cfg().get("secreto") or ""), "secreto distinto del de equip
 r = pedir()
 ok(r.status_code == 200 and "/a/" in r.json().get("url", ""), "firma buena -> 200 con url /a/<token>")
 ok(r.json()["url"].startswith(f"http://127.0.0.1:{PUERTO_PUENTE}/a/"), "la url es la IP:puerto del propio puente (Tailscale), no el túnel")
-ok(not tuneles, "/puente/app NO llama a ensure_tunnel()")
+ok(tuneles, "11/11: /puente/app vuelve a llamar a ensure_tunnel() (compatibilidad con la app instalada)")
 url = r.json()["url"]
 s = requests.Session()
 n_avisos = len(avisos)
@@ -195,7 +196,7 @@ ok(requests.get(f"{F}/ping", timeout=5).status_code == 404, "fuera de Tailscale:
 tok = pedir().json()["url"].rsplit("/", 1)[1]
 r = requests.get(f"http://127.0.0.1:{PUERTO_WEB}/a/{tok}", allow_redirects=False, timeout=5)
 ok(r.status_code == 302 and "Secure" in r.headers.get("Set-Cookie", ""), "túnel: /a/ sigue funcionando y su cookie lleva «Secure»")
-ok(not tuneles, "ninguna llamada de la app abrió el túnel")
+ok(len(tuneles) >= 1, "11/11: el pase usa el túnel")
 
 # ---------------------------------------------------------------- 10/11: aviso fuera del camino crítico
 n_avisos = len(avisos)
