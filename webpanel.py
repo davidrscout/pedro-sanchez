@@ -1028,14 +1028,8 @@ class Puente(Handler):
             if len(APP_TIMES) >= APP_MAX_HORA:
                 return self._out(429, {"error": "Demasiadas entradas desde la app en la última hora."})
             APP_TIMES.append(now)
-        # 11/11: la app instalada (build del 09/11) fuerza https sobre la URL del pase -> con http://<IP Tailscale>
-        # fallaba («fallo de conexión segura»). Vuelve el túnel https hasta instalar la app nueva; entonces, el
-        # camino directo (base = f"http://{yo}:{port}", ver 3619292) se publica A LA VEZ que el cliente nuevo.
-        try:
-            base = ensure_tunnel()
-        except Exception as e:
-            log(f"puente app: sin túnel ({type(e).__name__})")
-            return self._out(503, {"error": f"No pude abrir el túnel ({type(e).__name__})."})
+        yo, port = self._yo()
+        base = f"http://{yo}:{port}"           # 10/11: por Tailscale directo, sin abrir el túnel público
         register_ok(ip)
         tok = secrets.token_urlsafe(32)
         with LOCKS["app"]:
