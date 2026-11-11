@@ -919,10 +919,19 @@ class Puente(Handler):
         self._codigo = code
         super().send_response(code, message)
 
+    def _send(self, code, body=b"", *a, **k):
+        """Mide cuánto tarda en salir la respuesta hacia el móvil (diagnóstico de atascos de red)."""
+        t = time.time()
+        try:
+            return super()._send(code, body, *a, **k)
+        finally:
+            self._envio = (int((time.time() - t) * 1000), len(body) if body else 0)
+
     def _medido(self, fn):
-        """Una línea de log por llamada de la app: método, ruta (sin tokens), código y ms."""
+        """Una línea de log por llamada de la app: método, ruta (sin tokens), código, ms y envío (ms, bytes)."""
         t0 = time.time()
         self._codigo = None
+        self._envio = None
         try:
             return fn()
         finally:
@@ -934,7 +943,8 @@ class Puente(Handler):
             ms = int((time.time() - t0) * 1000)
             normal = self._codigo is not None and 200 <= self._codigo < 300 and ms <= 1500
             if not ruta.startswith("/s/") and not (ruta in self.RUTAS_FRECUENTES and normal):
-                log(f"app: {self.command} {ruta} {self._codigo} {ms} ms ({self.client_address[0]})")
+                env = f" [envío {self._envio[0]} ms, {self._envio[1]} B]" if self._envio else ""
+                log(f"app: {self.command} {ruta} {self._codigo} {ms} ms{env} ({self.client_address[0]})")
 
     def _out(self, code, obj):
         txt = isinstance(obj, str)
