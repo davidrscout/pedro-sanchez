@@ -176,9 +176,16 @@ function confirmar({ titulo, texto, detalle, accion, onOk }) {
 
 /* ---------- portada: dato vivo de cada tarjeta (id k-<clave>, valor k-<clave>-v y detalle k-<clave>-s) ---------- */
 const Home = {
+  /* el valor que empieza por un número ("187 procesos") se compone con el número grande y la unidad pequeña; si cambia, la tarjeta late una vez */
+  valor(a, t, v) {
+    const s = String(v); if (a._v === s) return; const nuevo = a._v !== undefined; a._v = s;
+    const m = !(t && t.classList.contains("ancha")) && /^(\d+)\s+(\D.*)$/.exec(s);
+    if (m) a.replaceChildren(h("b", { class: "kn", text: m[1] }), " ", h("span", { class: "ku", text: m[2] })); else a.textContent = s;
+    if (nuevo && t && !RM.matches) { t.classList.remove("fresca"); void t.offsetWidth; t.classList.add("fresca"); clearTimeout(t._f); t._f = setTimeout(() => t.classList.remove("fresca"), 800); }
+  },
   set(k, v, s, cls) {
     const a = $("k-" + k + "-v"), b = $("k-" + k + "-s"), t = $("k-" + k);
-    if (a && v != null) a.textContent = String(v);
+    if (a && v != null) Home.valor(a, t, v);
     if (b && s != null) b.textContent = String(s);
     if (t && cls != null) ["mal", "peligro", "sin"].forEach(c => t.classList.toggle(c, cls === c));
   } };
@@ -392,7 +399,22 @@ function pintaSismo(s) {
   svg.onpointermove = mueve; svg.onpointerdown = mueve;
   svg.onpointerleave = () => { sel.setAttribute("x1", -5); sel.setAttribute("x2", -5); lg.textContent = base; };
 }
-const pollSismo = poller(async () => { pintaSismo(await api("/api/serie")); }, 300000); pollSismo._vista = "pulso";
+/* minigráfica de la tarjeta Pulso: temperatura de las últimas 24 h (misma serie), con el punto vivo en la última lectura */
+function pintaSpark(s) {
+  const t = $("k-pulso"), pts = (s && s.puntos) || [], n = pts.length;
+  const val = pts.map(p => (p && p.t != null ? +p.t : null)), buenos = val.filter(v => v != null);
+  if (!n || buenos.length < 2) { t.classList.remove("con-g"); return; }
+  const mn = Math.min(...buenos), mx = Math.max(...buenos), r = Math.max(mx - mn, 8), lo = mn - (r - (mx - mn)) / 2;
+  const X = i => (i / (n - 1)) * 288, Y = v => 36 - ((v - lo) / r) * 32;
+  let d = "", ult = -1; val.forEach((v, i) => { if (v == null) { d += ""; return; } d += (i && val[i - 1] != null ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1); ult = i; });
+  let ar = ""; const tramos = d.match(/M[^M]+/g) || [];
+  tramos.forEach(tr => { const xs = [...tr.matchAll(/[ML]([\d.]+) /g)].map(m => m[1]); ar += tr + "L" + xs[xs.length - 1] + " 40L" + xs[0] + " 40Z"; });
+  $("k-pulso-ln").setAttribute("d", d); $("k-pulso-ar").setAttribute("d", ar);
+  const dot = $("k-pulso-d"); dot.hidden = ult !== n - 1; if (ult >= 0) dot.style.top = (Y(val[ult]) / 40 * 100).toFixed(1) + "%";
+  $("k-pulso-m").textContent = "máx " + NF.format(mx) + " °C";
+  t.classList.add("con-g");
+}
+const pollSismo = poller(async () => { const s = await api("/api/serie"); pintaSismo(s); pintaSpark(s); }, 300000); pollSismo._vista = "pulso";
 
 P.on("data", d => { D = d; document.body.classList.remove("sin"); $("sinsenal").hidden = true; pintaPulso(d); });
 P.on("wd", w => { if (D) P.pinta($("frase"), P.frase(D, w)); pintaLatido(); pintaVig(w); });
@@ -1322,6 +1344,8 @@ $("salir").addEventListener("click", async () => {
 
 /* arranque */
 addEventListener("keydown", e => { if (e.key === "/" && !/TEXTAREA|INPUT/.test((document.activeElement || {}).tagName || "") && !Hoja.pila.length) { e.preventDefault(); ir("conv"); Chat.textarea.focus(); } });
+/* entrada de la portada: se despliega una sola vez (después se quita la clase para que volver a ella no repita la animación) */
+(() => { const ini = $("inicio"); [...ini.querySelector(".rejilla").children].forEach((c, i) => c.style.setProperty("--n", i)); ini.classList.add("intro"); setTimeout(() => ini.classList.remove("intro"), 1800); })();
 P.start(); pollSismo.start(); Chat.cargar();
 /* se precargan los datos de las vistas para que las tarjetas de la portada tengan su dato vivo desde el primer momento */
 ["vigilante", "red", "memoria", "lanzar"].forEach(v => (alMostrar[v] || []).forEach(f => { try { f(); } catch (e) { } }));
