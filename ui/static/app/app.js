@@ -32,6 +32,8 @@ const IC = { refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/
   lock: '<rect x="5" y="11" width="14" height="9"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>' };
 function ic(n) { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("aria-hidden", "true"); s.innerHTML = IC[n]; return s; }
 const LS = { get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) { } } };
+/* lo que se vuelve inerte (sin foco ni clic) mientras hay una hoja modal o la sesión ha terminado: contenido, cabecera y barra de pestañas */
+const inertea = on => ["main", "top", "pestanas"].forEach(id => { const e = $(id); if (e) { on ? e.setAttribute("inert", "") : e.removeAttribute("inert"); } });
 
 /* ---------- sesión y API ---------- */
 class NetErr extends Error {} class AuthErr extends Error {}
@@ -47,7 +49,7 @@ const Session = { dead: false,
     const tx = kind === "cerrada" ? "Hasta luego" + CON_NOMBRE + ". Para volver, pide otro enlace con /web en Telegram."
       : "Por seguridad la sesión se ha cerrado. Pide otro enlace con /web en Telegram.";
     const box = h("div", { class: "fin", role: "alertdialog", "aria-modal": "true", "aria-labelledby": "finT" }, h("div", null, h("h2", { id: "finT", tabindex: "-1", text: tt }), h("p", { text: tx })));
-    ["main", "top"].forEach(id => { const e = id === "main" ? document.querySelector("main") : $(id); e && e.setAttribute("inert", ""); });
+    inertea(true);
     document.body.append(box); box.querySelector("h2").focus();
   } };
 async function req(path, opt, ms) {
@@ -125,7 +127,7 @@ const Hoja = { pila: [],
       close(v) { if (o.cerrado) return; o.cerrado = true; Hoja.pila.splice(Hoja.pila.indexOf(o), 1);
         el.classList.remove("on"); velo && velo.classList.remove("on"); document.removeEventListener("keydown", kd, true);
         setTimeout(() => { el.remove(); velo && velo.remove(); }, RM.matches ? 0 : 240);
-        if (modal) { ["main", "top"].forEach(x => { const e = x === "main" ? document.querySelector("main") : $(x); e && e.removeAttribute("inert"); });  }
+        if (modal) inertea(false);
         try { prev && prev.focus && prev.focus({ preventScroll: true }); } catch (e) { } onClose && onClose(v); } };
     const kd = e => {
       if (Hoja.pila[Hoja.pila.length - 1] !== o) return;
@@ -135,8 +137,7 @@ const Hoja = { pila: [],
         if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); } else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); } } };
     document.addEventListener("keydown", kd, true);
     cerrarB.addEventListener("click", () => o.close(false));
-    if (velo) { velo.addEventListener("click", () => o.close(false)); document.body.append(velo);
-      ["main", "top"].forEach(x => { const e = x === "main" ? document.querySelector("main") : $(x); e && e.setAttribute("inert", ""); });  }
+    if (velo) { velo.addEventListener("click", () => o.close(false)); document.body.append(velo); inertea(true); }
     document.body.append(el); Hoja.pila.push(o);
     requestAnimationFrame(() => { el.classList.add("on"); velo && velo.classList.add("on"); (el.querySelector("[data-autofocus]") || el.querySelector("h2")).focus({ preventScroll: true }); });
     return o;
@@ -191,66 +192,100 @@ const Home = {
   } };
 const plural = (n, uno, varios) => n + " " + (n === 1 ? uno : varios);
 
-/* ---------- navegación: portada + vistas a pantalla completa ----------
-   Se entra tocando una tarjeta (o un enlace data-ir); se sale con «Atrás», con Escape o con el botón/gesto atrás del
-   navegador (cada vista abierta es una entrada del historial). El mando de pantalla completa añade una entrada propia:
-   el primer «atrás» sale de pantalla completa y el segundo cierra la vista. */
+/* ---------- navegación: barra de pestañas flotante (Hablar · Pantalla · Pulso · Lanzar · Más), como la app de iPhone ----------
+   La pestaña activa se refleja en la URL (#hablar, #pantalla, #pulso, #lanzar, #mas) y cada cambio de pestaña es una entrada del historial:
+   el botón/gesto atrás del navegador vuelve a la pestaña anterior. Dentro de Más se abren vistas (#mas/ventanas…) con su «Atrás»; el atrás
+   del navegador las cierra primero. El mando de pantalla completa añade una entrada propia (el primer «atrás» sale de pantalla completa)
+   y oculta la barra. La última pestaña se recuerda en localStorage (jv_tab); sin nada guardado se empieza en Hablar. */
 const alMostrar = {}; let vista = "unica";
-const on = (v, f) => (alMostrar[v] = alMostrar[v] || []).push(f);
+const on = (v, f) => (alMostrar[v] = alMostrar[v] || []).push(f);      /* v: pestaña o vista de Más; "*" = cualquier cambio */
 const Nav = (() => {
-  const VIST = ["pulso", "pantalla", "conv", "lanzar", "ventanas", "vigilante", "procesos", "memoria", "red", "energia"];
-  const inicio = $("inicio"), body = document.body, vEl = v => $("v-" + v);
-  let actual = null, y0 = 0, opener = null, ignora = 0;
+  const TABS = ["hablar", "pantalla", "pulso", "lanzar", "mas"], SUBS = ["energia", "ventanas", "vigilante", "procesos", "memoria", "red"];
+  const COL = { hablar: "91,168,255", pantalla: "34,211,238", pulso: "52,211,153", lanzar: "167,139,250", mas: "139,92,246" };
+  const body = document.body, barra = $("pest-bar"), pos = {};
+  let tab = null, sub = null, opener = null, ignora = 0;
   const mandoFull = () => body.classList.contains("m-full");
+  const clave = (t, s) => (t || "") + (s ? "/" + s : "");
+  const hash = (t, s) => "#" + clave(t, s);
+  const analiza = txt => { const [t, s] = String(txt || "").replace(/^#/, "").split("/"); return TABS.includes(t) ? { t, s: t === "mas" && SUBS.includes(s) ? s : null } : null; };
   try { history.scrollRestoration = "manual"; } catch (e) { }
-  function pon(v) {
-    if (v === actual) return;
-    if (mandoFull()) $("m-full").click();                 /* el mando nunca se queda en pantalla completa al irse de su vista */
-    const antes = actual; if (antes) vEl(antes).hidden = true;
-    actual = v;
-    if (v) {
-      if (!antes) y0 = scrollY;
-      inicio.hidden = true; vEl(v).hidden = false; body.classList.add("en-vista"); scrollTo(0, 0);
-      (alMostrar[v] || []).forEach(f => { try { f(); } catch (e) { } });
-      const f = vEl(v).querySelector(".vbar [tabindex='-1']"); if (f) f.focus({ preventScroll: true });
-    } else {
-      inicio.hidden = false; body.classList.remove("en-vista"); scrollTo(0, y0);
-      (alMostrar.inicio || []).forEach(f => { try { f(); } catch (e) { } });
-      try { if (opener && opener.isConnected) opener.focus({ preventScroll: true }); } catch (e) { }
-    }
+  function pon(t, s, quieto) {
+    if (!TABS.includes(t)) return;
+    s = t === "mas" && SUBS.includes(s) ? s : null;
+    if (t === tab && s === sub) return;
+    if (mandoFull()) $("m-full").click();                 /* el mando nunca se queda a pantalla completa al irse de su pestaña */
+    if (tab) pos[clave(tab, sub)] = scrollY;
+    const antesS = sub; tab = t; sub = s;
+    TABS.forEach(x => { $("v-" + x).hidden = x !== t; });
+    if (t === "mas") { $("mas-raiz").hidden = !!s; SUBS.forEach(x => { $("v-" + x).hidden = x !== s; }); }
+    body.classList.toggle("en-vista", !!s);
+    barra.dataset.act = t; barra.style.setProperty("--i", String(TABS.indexOf(t))); barra.style.setProperty("--ct", COL[t]);
+    barra.querySelectorAll("[role=tab]").forEach(b => { const a = b.dataset.tab === t; b.setAttribute("aria-selected", String(a)); b.tabIndex = a ? 0 : -1; });
+    LS.set("jv_tab", t);
+    scrollTo(0, pos[clave(t, s)] || 0);
+    [t, s, "*"].forEach(n => n && (alMostrar[n] || []).forEach(f => { try { f(); } catch (e) { } }));
+    if (quieto) return;
+    if (s) { const f = $("v-" + s).querySelector(".vbar [tabindex='-1']"); if (f) f.focus({ preventScroll: true }); }
+    else if (antesS) { try { if (opener && opener.isConnected) opener.focus({ preventScroll: true }); } catch (e) { } }
+    else if (!barra.contains(document.activeElement)) { try { $("tab-" + t).focus({ preventScroll: true }); } catch (e) { } }
   }
-  function abrir(v) {
-    if (!VIST.includes(v) || v === actual) return;
-    if (!actual) { opener = document.activeElement && document.activeElement !== body ? document.activeElement : null; history.pushState({ v }, "", "#" + v); }
-    else history.replaceState({ v }, "", "#" + v);
-    pon(v);
+  /* v: una pestaña o una vista de Más. Cada llamada es una entrada del historial (reemplaza = no añadirla) */
+  function abrir(v, reemplaza) {
+    let t = v, s = null;
+    if (v === "conv" || v === "inicio") t = "hablar"; else if (SUBS.includes(v)) { t = "mas"; s = v; }
+    if (!TABS.includes(t) || (t === tab && (s || null) === sub)) return;
+    if (s && !sub) opener = document.activeElement && document.activeElement !== body ? document.activeElement : null;
+    const st = history.state || {}, nuevo = { t, s, n: (st.n || 0) + (reemplaza ? 0 : 1), p: reemplaza ? st.p : clave(tab, sub) };
+    if (reemplaza) history.replaceState(nuevo, "", hash(t, s)); else history.pushState(nuevo, "", hash(t, s));
+    pon(t, s);
   }
-  function cerrar() { if (!actual) return; if (history.state && history.state.v) history.back(); else pon(null); }
+  /* «Atrás» de una vista de Más: vuelve a Más (si se llegó desde otra pestaña, no se sale de Más por el historial) */
+  function cerrar() {
+    if (!sub) return;
+    const st = history.state || {};
+    if (st.p === "mas" && st.n > 0) history.back(); else abrir("mas", true);
+  }
   addEventListener("popstate", e => {
     if (ignora) { ignora--; return; }
-    const v = e.state && e.state.v;
     if (Hoja.pila.length) { Hoja.cerrarTodas(); ignora++; history.go(1); return; }    /* «atrás» cierra primero la hoja abierta */
-    if (v === "pantalla" && mandoFull()) { $("m-full").click(); return; }
-    pon(VIST.includes(v) ? v : null);
+    const st = e.state || analiza(location.hash) || {};
+    if (st.t === "pantalla" && mandoFull()) { $("m-full").click(); return; }
+    pon(TABS.includes(st.t) ? st.t : "hablar", st.s);
   });
   new MutationObserver(() => {
     const f = mandoFull(), st = history.state || {};
-    if (f && !st.full) history.pushState({ v: "pantalla", full: 1 }, "", "#pantalla");
+    if (f && !st.full) history.pushState({ t: "pantalla", s: null, full: 1, n: (st.n || 0) + 1, p: "pantalla" }, "", "#pantalla");
     else if (!f && st.full) history.back();
   }).observe(body, { attributes: true, attributeFilter: ["class"] });
-  addEventListener("keydown", e => { if (e.key === "Escape" && actual && !e.defaultPrevented && !Hoja.pila.length && !mandoFull()) cerrar(); });
+  addEventListener("keydown", e => { if (e.key === "Escape" && sub && !e.defaultPrevented && !Hoja.pila.length && !mandoFull()) cerrar(); });
   document.addEventListener("click", e => {
     const b = e.target.closest("[data-ir]");
-    if (b) { ir(b.dataset.ir); return; }
+    if (b) { abrir(b.dataset.ir); return; }
     if (e.target.closest("[data-atras]")) cerrar();
   });
-  history.replaceState({ v: null }, "", location.pathname + location.search);
-  return { abrir, cerrar, get actual() { return actual; } };
+  barra.addEventListener("click", e => {
+    const b = e.target.closest("[data-tab]"); if (!b) return;
+    if (b.dataset.tab === tab && !sub) { scrollTo({ top: 0, behavior: RM.matches ? "auto" : "smooth" }); return; }   /* tocar la pestaña activa = subir al principio */
+    abrir(b.dataset.tab);
+  });
+  barra.addEventListener("keydown", e => {
+    const k = { ArrowRight: 1, ArrowLeft: -1, Home: 0, End: 0 }[e.key]; if (k == null) return;
+    e.preventDefault();
+    const i = Math.max(0, TABS.indexOf(document.activeElement && document.activeElement.dataset.tab));
+    const j = e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : (i + k + TABS.length) % TABS.length;
+    abrir(TABS[j]); $("tab-" + TABS[j]).focus();
+  });
+  /* teclado en pantalla (iPhone: el viewport visual se encoge, el de diseño no): la barra se aparta para no quedar flotando sobre el texto */
+  if (window.visualViewport) { const vv = visualViewport;
+    vv.addEventListener("resize", () => body.classList.toggle("teclado", innerHeight - vv.height > 140 && vv.scale <= 1.01 && !mandoFull())); }
+  function inicia() {
+    const g = LS.get("jv_tab", "hablar"), p = analiza(location.hash) || { t: TABS.includes(g) ? g : "hablar", s: null };
+    history.replaceState({ t: p.t, s: p.s, n: 0, p: "" }, "", hash(p.t, p.s));
+    pon(p.t, p.s, true);
+  }
+  return { abrir, cerrar, inicia, get actual() { return tab; }, get sub() { return sub; } };
 })();
-function ir(v) {
-  if (v === "hablar" && Chat && Chat.textarea && document.activeElement === Chat.textarea) v = "conv";
-  if (v === "hablar" || v === "inicio") Nav.cerrar(); else Nav.abrir(v);
-}
+const ir = v => Nav.abrir(v);
 
 /* =============================== PULSO =============================== */
 document.documentElement.classList.add("js");
@@ -488,7 +523,7 @@ const Chat = (() => {
     if (!cerebros.some(b => b.id === cerebro && b.ok !== false)) { const f = cerebros.find(b => b.ok !== false); cerebro = f ? f.id : cerebro; }
     pintaCerebros(); cargado = true; resumen();
   }
-  on("conv", () => { if (!cargado) cargar(); });
+  on("hablar", () => { if (!cargado) cargar(); });
   const crece = () => { ta.style.height = "auto"; ta.style.height = Math.min(150, ta.scrollHeight) + "px"; ta.style.overflowY = ta.scrollHeight > 150 ? "auto" : "hidden"; env.disabled = !ta.value.trim(); };
   ta.addEventListener("input", crece);
   ta.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !TOUCH) { e.preventDefault(); comp.requestSubmit(); } });
@@ -545,7 +580,7 @@ const Chat = (() => {
     else { cuerpo.textContent = t; el.append(cuerpo); }
   }
   function preparar({ prompt, backend, modo: md }) {
-    ir("conv");
+    ir("hablar");
     const go = () => {
       if (backend && !elegir(String(backend), true) && cerebros.some(b => b.id === backend)) toast(nombre(backend) + " no está disponible; elige otro.", "warn");
       const mm = String(md || "").toLowerCase(); if (mm === "do" || mm === "actuar") setModo("do"); else if (mm === "ask" || mm === "leer") setModo("ask");
@@ -816,7 +851,7 @@ function pendiente(tipo, txt) {
     if (s <= 0) clearInterval(cuenta); }, 1000);
 }
 async function cancelar() {
-  try { const j = await api("/api/cancelar"); clearInterval(cuenta); $("pend").textContent = ""; Home.set("ene", "Listo", "Apagar, reiniciar, bloquear", ""); toast(j.text || "Cancelado.", "ok"); }
+  try { const j = await api("/api/cancelar"); clearInterval(cuenta); $("pend").textContent = ""; Home.set("ene", "Listo", "Apagar, reiniciar, volumen", ""); toast(j.text || "Cancelado.", "ok"); }
   catch (e) { if (!(e instanceof AuthErr)) toast(errText(e), "err"); }
 }
 $("cancelar").addEventListener("click", cancelar);
@@ -995,7 +1030,7 @@ const Lanz = (() => {
   on("lanzar", () => { if (!ok) cargar(); });
   return { cerrar: () => hoja && hoja.close() };
 })();
-["inicio", "pulso", "pantalla", "conv", "ventanas", "vigilante", "procesos", "memoria", "red", "energia"].forEach(v => on(v, () => Lanz.cerrar()));
+on("*", () => Lanz.cerrar());      /* la hoja de resultado de Lanzar se cierra al cambiar de pestaña o de vista */
 
 /* =============================== VENTANAS (lista con acciones; se usa en Control y en el mando) =============================== */
 const Vent = (() => {
@@ -1295,7 +1330,8 @@ const Mando = (() => {
 
 /* =============================== equipo y salida =============================== */
 /* Equipos: cada PC tiene su Pedro; aquí se salta al otro por el puente de Tailscale (pide su enlace, luego su PIN). */
-(async () => { try { const j = await api("/api/equipos"); if (j.yo) $("equipo").firstChild.textContent = j.yo; } catch (e) { } })();
+(async () => { try { const j = await api("/api/equipos"); if (j.yo) { $("equipo").firstChild.textContent = j.yo; $("mas-host").textContent = j.yo; } } catch (e) { } })();
+$("k-equipos").addEventListener("click", () => $("equipo").click());      /* la tarjeta Equipos de Más abre la misma hoja que el nombre del equipo */
 $("equipo").addEventListener("click", async () => {
   const lista = h("ul", { class: "equipos" }, h("li", null, h("span", { text: "Buscando equipos…" }), h("span", { class: "pronto", text: "" })));
   const o = Hoja.open({ titulo: "Equipos", texto: "Cada PC tiene su propio Pedro. Al saltar, pide el PIN de ese PC.", cuerpo: lista });
@@ -1343,11 +1379,13 @@ $("salir").addEventListener("click", async () => {
 })();
 
 /* arranque */
-addEventListener("keydown", e => { if (e.key === "/" && !/TEXTAREA|INPUT/.test((document.activeElement || {}).tagName || "") && !Hoja.pila.length) { e.preventDefault(); ir("conv"); Chat.textarea.focus(); } });
-/* entrada de la portada: se despliega una sola vez (después se quita la clase para que volver a ella no repita la animación) */
-(() => { const ini = $("inicio"); [...ini.querySelector(".rejilla").children].forEach((c, i) => c.style.setProperty("--n", i)); ini.classList.add("intro"); setTimeout(() => ini.classList.remove("intro"), 1800); })();
+addEventListener("keydown", e => { if (e.key === "/" && !/TEXTAREA|INPUT/.test((document.activeElement || {}).tagName || "") && !Hoja.pila.length) { e.preventDefault(); ir("hablar"); Chat.textarea.focus(); } });
+/* entrada de las tarjetas de Más: se despliegan una sola vez, la primera vez que se abre la pestaña */
+(() => { const r = $("mas-rejilla"); [...r.children].forEach((c, i) => c.style.setProperty("--n", i)); let hecho = false;
+  on("mas", () => { if (hecho) return; hecho = true; r.classList.add("intro"); setTimeout(() => r.classList.remove("intro"), 1800); }); })();
 P.start(); pollSismo.start(); Chat.cargar();
 /* se precargan los datos de las vistas para que las tarjetas de la portada tengan su dato vivo desde el primer momento */
 ["vigilante", "red", "memoria", "lanzar"].forEach(v => (alMostrar[v] || []).forEach(f => { try { f(); } catch (e) { } }));
 Pollers.forEach(p => p._vista && p.start());
+Nav.inicia();                                 /* la pestaña inicial (la de la URL, la última o Hablar) se muestra cuando ya están registrados los avisos de cada vista */
 })();
