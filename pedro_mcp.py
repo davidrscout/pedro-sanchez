@@ -2,9 +2,10 @@
 """Herramientas propias de Pedro como servidor MCP (stdio). Lo arranca Claude Code con --mcp-config (o Kimi Code si se elige a mano; ver jarvis.py).
 Idea de adewaskar/jarvis (createSdkMcpServer) y OpenJarvis (tools/ + mcp/).
 
-PEDRO_MODO=ask -> solo herramientas de lectura + memoria + agenda + aviso a Telegram (no tocan el PC).
+PEDRO_MODO=ask -> solo herramientas de lectura + memoria + agenda + aviso a Telegram + avisos/preguntas a David (no tocan el PC).
 PEDRO_MODO=do  -> además ratón, teclado, ventanas, lanzadores y cerrar procesos.
 El token de Telegram NO pasa por aquí: los avisos van a la bandeja (agenda.py) y los manda jarvis.py."""
+import asyncio
 import io
 import json
 import os
@@ -19,6 +20,7 @@ os.chdir(HOME)
 from mcp.server.mcpserver import MCPServer, Image  # noqa: E402
 
 import agenda  # noqa: E402
+import avisos  # noqa: E402
 import launchers  # noqa: E402
 import memoria  # noqa: E402
 import remoto  # noqa: E402
@@ -133,6 +135,40 @@ def agenda_borrar(id: str) -> str:
 def avisar_telegram(texto: str) -> str:
     """Manda un mensaje a David por Telegram (p. ej. cuando acabe algo largo). Úsalo con moderación."""
     return agenda.encolar(texto)
+
+
+# ------------------------------------------------------------------ avisos y preguntas con respuesta (siempre)
+ESPERA_MAX = 840      # Pedro corta cada tarea a los 15 min (run_claude): se deja margen para contestar tras la respuesta
+
+
+@mcp.tool()
+def avisar_a_david(texto: str, urgente: bool = False) -> str:
+    """Avisa a David (le llega por Telegram) sin esperar respuesta: «he terminado X», «ha pasado Y». Úsalo con moderación y
+    solo para lo que le interesa de verdad; urgente=True solo si no puede esperar."""
+    try:
+        a = avisos.crear(texto, None, espera=False, urgente=urgente, origen="Pedro")
+    except ValueError as e:
+        return str(e)
+    return f"Aviso registrado (id {a['id']}); Jarvis se lo entrega a David por Telegram."
+
+
+@mcp.tool()
+async def preguntar_a_david(pregunta: str, opciones: list[str] = [], esperar_s: int = 600, urgente: bool = False) -> str:
+    """Hace una pregunta a David y ESPERA su respuesta (él la ve en la app Pedro, pestaña Hablar, y le avisa Telegram).
+    Úsala cuando necesites una decisión suya para seguir (¿lo borro?, ¿A o B?) y no puedas elegir tú con seguridad.
+    opciones: respuestas sugeridas (vacío = respuesta libre; aun con opciones puede escribir otra cosa).
+    esperar_s: segundos máximos de espera (por defecto 600, máximo 840). Devuelve la respuesta de David, o un texto que
+    empieza por «Sin respuesta» si no contestó a tiempo: en ese caso NO supongas qué habría dicho; sigue sin esa decisión
+    o dile que le preguntarás luego."""
+    try:
+        espera = max(5, min(int(esperar_s), ESPERA_MAX))
+        a = avisos.crear(pregunta, list(opciones or []), espera=True, urgente=urgente, origen="Pedro")
+    except ValueError as e:
+        return str(e)
+    r = await asyncio.to_thread(avisos.esperar, a["id"], espera)
+    if r is None:
+        return f"Sin respuesta en {espera} s (id {a['id']}; la pregunta sigue pendiente en la app). No supongas su respuesta."
+    return r
 
 
 # ------------------------------------------------------------------ actuar (solo modo do)

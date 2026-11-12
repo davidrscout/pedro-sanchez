@@ -239,5 +239,28 @@ ok(cli([]).returncode == 2 or cli([]).returncode == 1, "CLI sin argumentos -> er
 ok(cli(["a", "--pregunta", "b"]).returncode != 0, "CLI: texto y --pregunta a la vez -> error de uso")
 ok(cli(["   "]).returncode != 0, "CLI: texto vacío -> error")
 
+# ---------------------------------------------------------------- herramientas MCP de Pedro (ask y do)
+LISTA = ("import asyncio, sys; sys.path.insert(0, %r); import pedro_mcp as m; "
+         "print(','.join(sorted(t.name for t in asyncio.run(m.mcp.list_tools()) if 'david' in t.name)))") % str(HOME)
+for modo in ("ask", "do"):
+    r = subprocess.run([sys.executable, "-c", LISTA], capture_output=True, timeout=120, env=dict(env, PEDRO_MODO=modo))
+    ok(r.stdout.decode().strip() == "avisar_a_david,preguntar_a_david", f"modo {modo}: están avisar_a_david y preguntar_a_david " + r.stderr.decode()[-150:])
+limpiar()
+import asyncio  # noqa: E402
+import pedro_mcp  # noqa: E402
+r = asyncio.run(pedro_mcp.mcp.call_tool("avisar_a_david", {"texto": "listo el informe", "urgente": True}))
+x = av.listar(False)[0]
+ok(not r.is_error and x["texto"] == "listo el informe" and x["urgente"] and x["origen"] == "Pedro" and x["estado"] == "informativo",
+   "avisar_a_david (vía servidor MCP): informativo, urgente, origen «Pedro»")
+threading.Timer(1.5, lambda: av.responder(av.listar()[0]["id"], "A", "app")).start()
+t0 = time.time()
+r = asyncio.run(pedro_mcp.mcp.call_tool("preguntar_a_david", {"pregunta": "¿A o B?", "opciones": ["A", "B"], "esperar_s": 30}))
+ok(r.structured_content["result"] == "A" and time.time() - t0 < 10, "preguntar_a_david: bloquea hasta la respuesta y la devuelve")
+t0 = time.time()
+r = asyncio.run(pedro_mcp.mcp.call_tool("preguntar_a_david", {"pregunta": "¿hola?", "esperar_s": 1}))
+t = r.structured_content["result"]
+ok(t.startswith("Sin respuesta en 5 s") and 4.5 < time.time() - t0 < 12, f"preguntar_a_david sin respuesta: texto claro «Sin respuesta…» (mínimo 5 s) -> {t[:60]}")
+ok(asyncio.run(pedro_mcp.preguntar_a_david("  ", [], 5)) == "Falta el texto.", "preguntar_a_david con pregunta vacía: mensaje claro, no revienta")
+
 print("TODAS LAS PRUEBAS DE AVISOS OK" if not fallos else f"{fallos} FALLOS")
 raise SystemExit(1 if fallos else 0)
