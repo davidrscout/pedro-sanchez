@@ -75,7 +75,17 @@ ok("--session-id" in a() and j.load_state()["engine"] == "claude", "un estado vi
 j.CFG = {"JARVIS_MODELO": "sonnet"}
 j.brain_sync("m", "ask")
 ok(a()[a().index("--model") + 1] == "sonnet", "JARVIS_MODELO se respeta")
+j.brain_sync("m", "ask", "claude", "haiku")
+ok(a()[a().index("--model") + 1] == "haiku" and a().count("--model") == 1, "llamada de voz: modelo=haiku manda sobre JARVIS_MODELO (un solo --model)")
+j.brain_sync("m", "ask", "claude")
+ok(a()[a().index("--model") + 1] == "sonnet", "sin modelo de voz sigue valiendo JARVIS_MODELO (comportamiento de siempre)")
+j.brain_sync("m", "ask", "claude", "haiku; calc")
+ok(a()[a().index("--model") + 1] == "sonnet", "un nombre de modelo raro no se pasa al CLI")
 j.CFG = {}
+j.brain_sync("m", "ask", "claude")
+ok("--model" not in a(), "sin JARVIS_MODELO ni modelo de voz: no hay --model")
+j.brain_sync("m", "ask", "claude", "sonnet")
+ok(a()[a().index("--model") + 1] == "sonnet" and "ANTHROPIC_API_KEY" not in calls[-1].kw["env"], "con modelo de voz sigue sin claves de pago (coste cero)")
 n = len(calls)
 ok(j.brain_sync("x", "ask", "inventado") == "Cerebro desconocido." and len(calls) == n, "cerebro desconocido: no cae a otro (nada automático)")
 tel = [json.loads(l) for l in j.TELEMETRIA.read_text(encoding="utf-8").splitlines()]

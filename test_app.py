@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Entrada directa de la app nativa «Pedro» (iPhone): POST /puente/app firmado -> /a/<token de un uso> -> sesión.
 Sin Tailscale ni túnel reales: el puente escucha en 127.0.0.1 y se finge red 100.x donde toca."""
+import base64
+import os
 import secrets
 import tempfile
 import threading
@@ -13,6 +15,8 @@ import requests
 import webpanel as w
 
 tmp = Path(tempfile.mkdtemp())
+os.environ["JARVIS_AVISOS_DIR"] = str(tmp)     # los avisos de estas pruebas no tocan el avisos.json real
+import avisos as av  # noqa: E402
 w.STATE_F, w.LOCK_F, w.DEV_F, w.ENROLL_F = tmp / "st.json", tmp / "LOCKED", tmp / "dev.json", tmp / "enroll.json"
 w.APP_F, w.APP_SECRETO_DESTINO = tmp / "app_pedro.json", tmp / ".secreto_app"
 PUERTO_WEB, PUERTO_PUENTE, PUERTO_FUERA = 18811, 18812, 18813
@@ -37,6 +41,22 @@ def espera_aviso(n_antes, seg=1.0):
     while len(avisos) <= n_antes and time.time() - t0 < seg:
         time.sleep(0.02)
     return avisos[-1] if len(avisos) > n_antes else None
+
+
+def espera_log(pred, seg=1.0):
+    """El log del puente se escribe DESPUÉS de enviar la respuesta: espera (hasta 1 s) a que aparezca la línea."""
+    t0 = time.time()
+    while not pred() and time.time() - t0 < seg:
+        time.sleep(0.02)
+    return pred()
+
+
+def post_reintento(*a, **k):
+    """Windows resetea la conexión si el servidor contesta 401 sin leer el cuerpo: un reintento, no un fallo."""
+    try:
+        return requests.post(*a, **k)
+    except requests.exceptions.ConnectionError:
+        return requests.post(*a, **k)
 
 
 def ok(c, txt):
@@ -167,9 +187,9 @@ ok(requests.post(f"{P}/api/estado", headers=dict(HJ, Host="x.trycloudflare.com")
 ok(requests.get(f"{P}/t/loquesea", timeout=5).status_code == 404, "puente: /t/ (flujo web) NO existe -> 404")
 ok(requests.post(f"{P}/login", json={}, timeout=5).status_code == 404, "puente: /login (PIN) NO existe -> 404")
 ok(requests.get(f"{P}/api/estado", timeout=5).status_code == 404, "puente: ruta no listada -> 404")
-ok(any(m.startswith("app: POST /api/estado 200 ") and m.rstrip().endswith("(127.0.0.1)") for m in registro), "log por llamada: acción, código, ms e IP")
+ok(espera_log(lambda: any(m.startswith("app: POST /api/estado 200 ") and m.rstrip().endswith("(127.0.0.1)") for m in registro)), "log por llamada: acción, código, ms e IP")
 import re as _re
-ok(any(m.startswith("app: GET /a/… 302") for m in registro) and not any(_re.search(r"/a/[A-Za-z0-9_-]{20,}", m) for m in registro),
+ok(espera_log(lambda: any(m.startswith("app: GET /a/… 302") for m in registro)) and not any(_re.search(r"/a/[A-Za-z0-9_-]{20,}", m) for m in registro),
    "el log no guarda tokens")
 # IP falsa en Cf-Connecting-Ip: el puente la ignora
 url = pedir().json()["url"]
@@ -179,7 +199,7 @@ ok(requests.get(url, headers={"Cf-Connecting-Ip": "8.8.8.8"}, allow_redirects=Fa
    "puente: Cf-Connecting-Ip falsa no salta el bloqueo de IP")
 w.save_state({"ips": {}, "recent": [], "pause_until": 0, "active_link": None})
 ok(requests.post(f"{P}/logout", headers=HJ, json={}, timeout=5).status_code == 200, "puente: POST /logout -> 200")
-ok(requests.post(f"{P}/api/estado", headers=HJ, json={}, timeout=5).status_code == 401, "tras /logout la sesión ya no vale")
+ok(post_reintento(f"{P}/api/estado", headers=HJ, json={}, timeout=5).status_code == 401, "tras /logout la sesión ya no vale")
 # fuera de Tailscale: todo 404
 F = f"http://127.0.0.1:{PUERTO_FUERA}"
 url = pedir().json()["url"].replace(str(PUERTO_PUENTE), str(PUERTO_FUERA))
@@ -220,14 +240,166 @@ ok(all(requests.post(f"{P}/api/vivo", headers=HJ, json={}, timeout=5).status_cod
 ok(all(requests.post(f"{P}/api/raton", headers=HJ, json={"a": "mover"}, timeout=5).status_code == 200 for _ in range(3)), "puente: /api/raton -> 200")
 ok(not any("/api/vivo" in m or "/api/raton" in m for m in registro), "log: /api/vivo y /api/raton con 2xx y rápidos NO se registran")
 requests.post(f"{P}/api/vivo", headers={"X-Jarvis": "1"}, json={}, timeout=5)
-ok(any(m.startswith("app: POST /api/vivo 401") for m in registro), "log: /api/vivo con error SÍ se registra")
+ok(espera_log(lambda: any(m.startswith("app: POST /api/vivo 401") for m in registro)), "log: /api/vivo con error SÍ se registra")
 rapido = w.H["raton"]
 w.H["raton"] = lambda d: (time.sleep(1.6), {"ok": True})[1]
 requests.post(f"{P}/api/raton", headers=HJ, json={}, timeout=5)
 w.H["raton"] = rapido
-ok(any(m.startswith("app: POST /api/raton 200") for m in registro), "log: /api/raton lento (>1500 ms) SÍ se registra")
+ok(espera_log(lambda: any(m.startswith("app: POST /api/raton 200") for m in registro)), "log: /api/raton lento (>1500 ms) SÍ se registra")
 requests.post(f"{P}/api/estado", headers=HJ, json={}, timeout=5)
-ok(any(m.startswith("app: POST /api/estado 200") for m in registro), "log: las demás llamadas se siguen registrando siempre")
+ok(espera_log(lambda: any(m.startswith("app: POST /api/estado 200") for m in registro)), "log: las demás llamadas se siguen registrando siempre")
+
+# ---------------------------------------------------------------- 12/11: avisos con respuesta y llamada por voz (Puente, con sesión)
+w.save_state({"ips": {}, "recent": [], "pause_until": 0, "active_link": None})
+w.APP_TIMES.clear()
+sid = requests.get(pedir().json()["url"], allow_redirects=False, timeout=5).cookies.get("sid")
+CK = {"Cookie": f"sid={sid}"}
+HJ = dict(CK, **{"X-Jarvis": "1"})
+F = f"http://127.0.0.1:{PUERTO_FUERA}"
+W = f"http://127.0.0.1:{PUERTO_WEB}"
+for ruta in ("/api/avisos", "/api/avisos/responder", "/api/llamada/turno"):
+    ok(requests.post(f"{P}{ruta}", headers={"X-Jarvis": "1"}, json={}, timeout=5).status_code == 401, f"puente: {ruta} sin sesión -> 401")
+    ok(requests.post(f"{P}{ruta}", headers=CK, json={}, timeout=5).status_code == 403, f"puente: {ruta} sin X-Jarvis -> 403")
+    ok(requests.post(f"{F}{ruta}", headers=HJ, json={}, timeout=5).status_code == 404, f"fuera de Tailscale: {ruta} -> 404")
+
+# --- avisos
+ok(requests.post(f"{P}/api/avisos", headers=HJ, json={}, timeout=5).json() == {"avisos": []}, "puente: /api/avisos sin nada -> {avisos: []}")
+preg = av.crear("¿Sigo con el despliegue?", ["Sí", "No"], espera=True, urgente=True, origen="Orquestador Gemsy")
+info = av.crear("Copia terminada", origen="Pedro")
+r = requests.post(f"{P}/api/avisos", headers=HJ, json={}, timeout=5)
+lista = r.json()["avisos"]
+ok(r.status_code == 200 and [x["id"] for x in lista] == [preg["id"]], "puente: /api/avisos devuelve solo las pendientes")
+ok(set(lista[0]) == set(av.PUBLICOS) and lista[0]["opciones"] == ["Sí", "No"] and lista[0]["urgente"] and lista[0]["origen"] == "Orquestador Gemsy"
+   and lista[0]["estado"] == "pendiente" and lista[0]["respuesta"] is None, "el aviso trae todos los campos del contrato")
+ok({x["id"] for x in requests.post(f"{P}/api/avisos", headers=HJ, json={"todos": True}, timeout=5).json()["avisos"]} == {preg["id"], info["id"]},
+   "todos:true trae también los informativos")
+ok({x["id"] for x in requests.post(f"{P}/api/avisos", headers=HJ, json={"todos": "si"}, timeout=5).json()["avisos"]} == {preg["id"]},
+   "solo todos:true (booleano) amplía la lista")
+rp = lambda i, resp, base=P: requests.post(f"{base}/api/avisos/responder", headers=HJ, json={"id": i, "respuesta": resp}, timeout=5)
+ok(rp("noexiste", "x").status_code == 400, "responder a un id que no existe -> 400")
+ok(rp(preg["id"], "").status_code == 400 and rp(preg["id"], "x" * 2001).status_code == 400, "respuesta vacía o de más de 2000 caracteres -> 400")
+ok(requests.post(f"{P}/api/avisos/responder", headers=HJ, json={"id": preg["id"]}, timeout=5).status_code == 400, "sin campo respuesta -> 400")
+ok(requests.post(f"{P}/api/avisos/responder", headers=HJ, json={"id": preg["id"], "respuesta": 5}, timeout=5).status_code == 400, "respuesta que no es texto -> 400")
+ok(av.obtener(preg["id"])["estado"] == "pendiente", "los rechazos no tocan el aviso")
+r = rp(preg["id"], "Sí, sigue")
+ok(r.status_code == 200 and r.json() == {"ok": True}, "responder -> 200 {ok: true}")
+x = av.obtener(preg["id"])
+ok(x["estado"] == "respondido" and x["respuesta"] == "Sí, sigue" and x["via"] == "app" and x["respondido_en"], "queda respondido con via «app» (entró por el Puente)")
+r = rp(preg["id"], "No")
+ok(r.status_code == 400 and "respondido" in r.json()["error"] and av.obtener(preg["id"])["respuesta"] == "Sí, sigue", "doble respuesta -> 400 y gana la primera")
+ok(rp(info["id"], "x").status_code == 400, "un informativo no admite respuesta -> 400")
+ok(requests.post(f"{P}/api/avisos", headers=HJ, json={}, timeout=5).json() == {"avisos": []}, "respondido: ya no sale en pendientes")
+preg2 = av.crear("¿A o B?", ["A", "B"], espera=True)
+r = rp(preg2["id"], "B", W)
+ok(r.status_code == 200 and av.obtener(preg2["id"])["via"] == "web", "por el túnel la respuesta queda con via «web»")
+ok(any(m.startswith("aviso ") and "respondido desde app" in m for m in registro) and not any("Sí, sigue" in m for m in registro),
+   "el log dice quién respondió, no qué respondió")
+ok(espera_log(lambda: any(m.startswith("app: POST /api/avisos/responder 400") for m in registro)), "el log del puente registra las llamadas a los avisos")
+
+# --- llamada por voz
+llam = {"stt": [], "brain": [], "tts": []}
+audio = b"\x1aE\xdf\xa3" * 300
+
+
+def f_stt(b):
+    llam["stt"].append(len(b))
+    return "  qué hora es  "
+
+
+def f_brain(p, m, b="claude", modelo=None):
+    llam["brain"].append((p, m, b, modelo))
+    return "Son las tres."
+
+
+def f_tts(t, v):
+    llam["tts"].append((t, v))
+    return b"ID3-FALSO-MP3"
+
+
+w.H.update({"stt": f_stt, "brain": f_brain, "tts": f_tts})
+
+
+def turno(qs="", cab=None, cuerpo=audio, tipo="audio/webm", base=P):
+    return requests.post(f"{base}/api/llamada/turno{qs}", headers=dict(HJ, **{"Content-Type": tipo}, **(cab or {})), data=cuerpo, timeout=5)
+
+
+def espera_job(r, base=P):
+    assert r.status_code == 200 and r.json().get("job"), (r.status_code, r.text)
+    for _ in range(200):
+        j = requests.get(f"{base}/api/job/{r.json()['job']}", headers=HJ, timeout=5).json()
+        if j.get("state") == "done":
+            return j
+        time.sleep(0.03)
+    return {}
+
+
+registro.clear()
+r = turno()
+ok(r.status_code == 200 and list(r.json()) == ["job"], "puente: audio -> 200 con {job}")
+j = espera_job(r)
+ok(j["oido"] == "qué hora es" and j["texto"] == "Son las tres." and base64.b64decode(j["audio_b64"]) == b"ID3-FALSO-MP3", "resultado: oido (transcrito y sin espacios), texto y audio_b64 (mp3 de voz.py)")
+ok(set(j["ms"]) == {"stt", "cerebro", "tts"} and all(isinstance(v, int) and v >= 0 for v in j["ms"].values()) and "error" not in j, "ms con stt/cerebro/tts y sin error")
+ok(llam["stt"][-1] == len(audio), "el audio entero llega al reconocedor")
+p, m, b, mod = llam["brain"][-1]
+ok(p == w.VOZ_PREFIJO + "qué hora es" and m == "ask" and b == "claude" and mod is None, "cerebro: prefijo de voz + lo oído, modo ask, claude y sin modelo especial por defecto")
+ok(llam["tts"][-1] == ("Son las tres.", "es-ES-AlvaroNeural"), "voz por defecto es-ES-AlvaroNeural")
+ok(espera_log(lambda: any(m.startswith("llamada: claude/ask") and "stt=" in m and "cerebro=" in m and "tts=" in m and "total=" in m for m in registro)), "el log mide cada fase: stt, cerebro, tts y total")
+ok(not any("qué hora" in m or "Son las tres" in m for m in registro), "el log de la llamada no guarda lo hablado")
+n_stt = len(llam["stt"])
+j = espera_job(turno(cuerpo=b'{"texto": "  hola Pedro  "}', tipo="application/json"))
+ok(j["oido"] == "hola Pedro" and j["texto"] == "Son las tres." and j["ms"]["stt"] == 0 and len(llam["stt"]) == n_stt and llam["brain"][-1][0] == w.VOZ_PREFIJO + "hola Pedro",
+   "JSON {texto}: no pasa por el reconocedor (stt = 0 ms)")
+j = espera_job(turno("?cerebro=kimi&voz=es-ES-ElviraNeural"))
+ok(llam["brain"][-1][2] == "kimi" and llam["tts"][-1][1] == "es-ES-ElviraNeural", "query: cerebro=kimi y voz")
+j = espera_job(turno(cab={"X-Cerebro": "local", "X-Voz": "es-MX-JorgeNeural"}))
+ok(llam["brain"][-1][2] == "local" and llam["tts"][-1][1] == "es-MX-JorgeNeural", "cabeceras X-Cerebro y X-Voz valen igual")
+j = espera_job(turno(cuerpo=b'{"texto": "ey", "cerebro": "agy"}', tipo="application/json"))
+ok(llam["brain"][-1][2] == "agy", "cerebro también puede ir en el JSON")
+j = espera_job(turno("?cerebro=local", cab={"X-Cerebro": "kimi"}))
+ok(llam["brain"][-1][2] == "local", "la query manda sobre la cabecera")
+ok(turno("?cerebro=gpt").status_code == 400 and turno("?cerebro=auto").status_code == 400, "cerebro desconocido (o «auto») -> 400: nunca automático")
+n_b = len(llam["brain"])
+ok(turno("?modo=do").status_code == 400 and turno("?modo=do&confirm=false").status_code == 400 and turno("?modo=raro").status_code == 400, "modo do sin confirm=true (o modo raro) -> 400")
+ok(len(llam["brain"]) == n_b, "los 400 no llegan al cerebro")
+j = espera_job(turno("?modo=do&confirm=true"))
+ok(llam["brain"][-1][1] == "do", "modo=do con confirm=true -> cerebro en modo do")
+j = espera_job(turno("?modo=do", cab={"X-Confirm": "true"}))
+ok(llam["brain"][-1][1] == "do", "confirm por cabecera X-Confirm")
+ok(turno(tipo="text/plain").status_code == 400 and turno(cuerpo=b"", tipo="audio/webm").status_code == 400 and turno(cuerpo=b"no json", tipo="application/json").status_code == 400
+   and turno(cuerpo=b'{"texto": "  "}', tipo="application/json").status_code == 400 and turno(cuerpo=b"[1]", tipo="application/json").status_code == 400,
+   "tipo no válido, cuerpo vacío, JSON roto, texto vacío o JSON que no es objeto -> 400")
+# modelo de voz (JARVIS_MODELO_VOZ): solo Claude, solo en la llamada
+w.CFG["JARVIS_MODELO_VOZ"] = "haiku"
+espera_job(turno())
+ok(llam["brain"][-1][3] == "haiku", "JARVIS_MODELO_VOZ=haiku -> las llamadas de Claude usan haiku")
+espera_job(turno("?cerebro=kimi"))
+ok(llam["brain"][-1][3] is None and llam["brain"][-1][2] == "kimi", "...pero Kimi no recibe ese modelo")
+del w.CFG["JARVIS_MODELO_VOZ"]
+espera_job(turno())
+ok(llam["brain"][-1][3] is None, "sin JARVIS_MODELO_VOZ -> el de siempre")
+# fallos de cada fase
+ok(espera_job(turno())["audio_b64"] is not None, "(control) todo bien antes de romper cosas")
+w.H["stt"] = lambda b: ""
+nb = len(llam["brain"])
+j = espera_job(turno())
+ok(j["error"] == "sin_voz" and j["oido"] == "" and "repetirlo" in j["texto"] and j["audio_b64"] and len(llam["brain"]) == nb, "audio sin voz: pide repetir (con voz) sin molestar al cerebro")
+w.H["stt"] = lambda b: (_ for _ in ()).throw(RuntimeError("boom con datos privados"))
+j = espera_job(turno())
+ok(j["error"] == "stt" and j["texto"] == "No pude transcribir el audio." and j["audio_b64"] is None and "ms" in j, "stt roto: error «stt», sin tumbar nada")
+w.H["stt"] = f_stt
+w.H["brain"] = lambda p, m, b="claude", modelo=None: (_ for _ in ()).throw(RuntimeError("cerebro caído"))
+j = espera_job(turno())
+ok(j["error"] == "cerebro" and j["oido"] == "qué hora es" and j["audio_b64"], "cerebro roto: error «cerebro», conserva lo oído y lo dice en voz")
+w.H["brain"] = f_brain
+w.H["tts"] = lambda t, v: (_ for _ in ()).throw(RuntimeError("sin internet"))
+j = espera_job(turno())
+ok(j["texto"] == "Son las tres." and j["audio_b64"] is None and "error" not in j, "tts roto: la respuesta en texto llega igualmente (audio_b64 null)")
+w.H["tts"] = f_tts
+# por el túnel (mismo Handler) también existe, con la misma sesión
+r = requests.post(f"{W}/api/llamada/turno", headers=HJ | {"Content-Type": "audio/webm"}, data=audio, timeout=5)
+ok(r.status_code == 200 and espera_job(r, W)["texto"] == "Son las tres.", "por el túnel: /api/llamada/turno también funciona")
+ok(requests.post(f"{W}/api/avisos", headers=HJ, json={}, timeout=5).status_code == 200, "por el túnel: /api/avisos también funciona")
+ok(espera_log(lambda: any(m.startswith("app: POST /api/llamada/turno 200") for m in registro)), "el log del puente registra cada turno")
 
 print("TODAS LAS PRUEBAS DE LA APP OK" if not fallos else f"{fallos} FALLOS")
 raise SystemExit(1 if fallos else 0)

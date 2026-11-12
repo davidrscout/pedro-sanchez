@@ -4,6 +4,7 @@
 Flujo: /web en Telegram -> enlace reutilizable hasta /caducar -> página de PIN -> sesión con cookie.
 Telegram NO es de fiar (cuenta compartida): lo único que protege es el PIN, con bloqueos duros.
 """
+import base64
 import hashlib
 import hmac
 import json
@@ -19,6 +20,9 @@ import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+
+import avisos
 
 HOME = Path(__file__).resolve().parent
 STATE_F = HOME / "webpanel_state.json"
@@ -404,6 +408,7 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "J"
     sys_version = ""
     COOKIE_SECURE = "; Secure"     # por el túnel (HTTPS); el Puente (HTTP dentro de Tailscale) lo quita
+    VIA = "web"                    # por dónde responde David a un aviso (avisos.responder): web (túnel) | app (Puente)
 
     def _ips_propias(self):
         """IPs del propio PC (para distinguir una prueba hecha desde aquí de una entrada real del iPhone)."""
@@ -451,6 +456,21 @@ class Handler(BaseHTTPRequestHandler):
     def _origin_ok(self):
         o = self.headers.get("Origin")
         return (not o) or o.endswith("://" + tunnel_host()) or o.startswith("http://127.0.0.1")
+
+    def _drenar(self, tope=6_000_000):
+        """Lee y tira el cuerpo de una petición que se rechaza SIN usarlo. Si el servidor contesta (401, 403, 404...) y cierra con el
+        cuerpo sin leer, Windows resetea la conexión y el cliente ve «conexión cancelada» en lugar del código de error."""
+        try:
+            resto = int(self.headers.get("Content-Length", "0"))
+            if resto > tope:
+                return
+            while resto > 0:
+                trozo = self.rfile.read(min(65536, resto))
+                if not trozo:
+                    break
+                resto -= len(trozo)
+        except Exception:
+            pass
 
     # -------------------------------------------------- GET
     def do_GET(self):
@@ -510,13 +530,16 @@ class Handler(BaseHTTPRequestHandler):
     # -------------------------------------------------- POST
     def do_POST(self):
         if not self._host_ok() or not self._origin_ok():
+            self._drenar()
             return self._send(421, "no")
         path = self.path.split("?")[0]
         if path == "/login":
             return self._login()
         if self.headers.get("X-Jarvis") != "1":
+            self._drenar()
             return self._json(403, {"error": "cabecera"})
         if not session_valid(self):
+            self._drenar()
             return self._json(401, {"error": "sesion"})
         if path == "/logout":
             SESS["sid"] = None
@@ -524,6 +547,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"ok": True})
         if path == "/api/stt":
             return self._stt()
+        if path == "/api/llamada/turno":
+            return self._llamada()
         if path.startswith("/api/"):
             return self._api(path[5:], self._body())
         return self._send(404, "no")
@@ -579,6 +604,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             n = 0
         if n <= 0 or n > 6_000_000 or not self.headers.get("Content-Type", "").startswith("audio/"):
+            self._drenar()
             return self._json(400, {"error": "audio no válido"})
         data = self.rfile.read(n)
         try:
@@ -586,6 +612,101 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             log(f"stt error {type(e).__name__}: {str(e)[:150]}")
             return self._json(500, {"error": "No pude transcribir el audio."})
+
+    def _llamada(self):
+        """Un turno de la llamada por voz de la app: audio (audio/*, como /api/stt) o JSON {texto} (el móvil ya transcribió)
+        -> tarea {job}. Resultado del job: {oido, texto, audio_b64, ms:{stt,cerebro,tts}} (+ error si algo falló).
+        Usa la conversación normal de Pedro (misma continuidad que el chat) con el prefijo de voz. El cerebro lo dice el cliente
+        (cerebro=claude|kimi|agy|local, por defecto claude) y modo=do exige confirm=true: nada automático, igual que /api/chat."""
+        q = {k: v[0] for k, v in parse_qs(urlsplit(self.path).query).items() if v}
+        try:
+            n = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            n = 0
+        ctype = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        es_audio = ctype.startswith("audio/")
+        if n <= 0 or n > (6_000_000 if es_audio else 20000) or not (es_audio or ctype == "application/json"):
+            self._drenar()
+            return self._json(400, {"error": "audio no válido" if es_audio or ctype != "application/json" else "cuerpo no válido"})
+        data = self.rfile.read(n)
+        cuerpo, texto = {}, ""
+        if not es_audio:
+            try:
+                cuerpo = json.loads(data.decode("utf-8"))
+            except Exception:
+                cuerpo = None
+            if not isinstance(cuerpo, dict):
+                return self._json(400, {"error": "JSON no válido"})
+            texto = str(cuerpo.get("texto", "")).strip()[:4000]
+            if not texto:
+                return self._json(400, {"error": "vacío"})
+
+        def param(nombre, defecto=""):        # query string > cabecera X-<Nombre> > cuerpo JSON
+            v = q.get(nombre)
+            if v is None:
+                v = self.headers.get("X-" + nombre.capitalize())
+            if v is None:
+                v = cuerpo.get(nombre)
+            return defecto if v is None else v
+        cerebro = str(param("cerebro", "claude")).strip().lower()
+        modo = str(param("modo", "ask")).strip().lower()
+        confirm = str(param("confirm", "")).strip().lower() in ("1", "true", "si", "sí", "yes")
+        voz_nombre = str(param("voz", "")).strip()[:40] or "es-ES-AlvaroNeural"
+        if cerebro not in ("claude", "kimi", "agy", "local"):
+            return self._json(400, {"error": "cerebro desconocido"})
+        if modo not in ("ask", "do"):
+            return self._json(400, {"error": "modo desconocido"})
+        if modo == "do" and not confirm:
+            return self._json(400, {"error": "falta confirmación"})
+        modelo = str(CFG.get("JARVIS_MODELO_VOZ", "")).strip() if cerebro == "claude" else ""
+
+        def turno():
+            ms = {"stt": 0, "cerebro": 0, "tts": 0}
+            t_ini = time.time()
+
+            def sale(oido, resp, mp3=None, error=None):
+                r = {"oido": oido, "texto": resp, "audio_b64": base64.b64encode(mp3).decode("ascii") if mp3 else None, "ms": dict(ms)}
+                if error:
+                    r["error"] = error
+                log(f"llamada: {cerebro}/{modo} modelo={modelo or '-'} entrada={'audio %d B' % len(data) if es_audio else 'texto %d car' % len(oido)} "
+                    f"stt={ms['stt']} ms cerebro={ms['cerebro']} ms tts={ms['tts']} ms total={int((time.time() - t_ini) * 1000)} ms "
+                    f"respuesta={len(resp)} car audio={len(mp3) if mp3 else 0} B{' ERROR ' + error if error else ''}")
+                return r
+
+            def voz_de(resp):
+                t = time.time()
+                try:
+                    return H["tts"](resp, voz_nombre)
+                except Exception as e:
+                    log(f"llamada: tts error {type(e).__name__}: {str(e)[:120]}")
+                    return None
+                finally:
+                    ms["tts"] = int((time.time() - t) * 1000)
+            oido = texto
+            if es_audio:
+                t = time.time()
+                try:
+                    oido = str(H["stt"](data) or "").strip()
+                except Exception as e:
+                    ms["stt"] = int((time.time() - t) * 1000)
+                    log(f"llamada: stt error {type(e).__name__}: {str(e)[:150]}")
+                    return sale("", "No pude transcribir el audio.", error="stt")
+                ms["stt"] = int((time.time() - t) * 1000)
+            if not oido:
+                resp = "No te he oído bien. ¿Puedes repetirlo?"
+                return sale("", resp, voz_de(resp), error="sin_voz")
+            t = time.time()
+            try:
+                pr = VOZ_PREFIJO + oido
+                resp = str(H["brain"](pr, modo, cerebro, modelo) if modelo else H["brain"](pr, modo, cerebro)).strip() or "(sin respuesta)"
+            except Exception as e:
+                ms["cerebro"] = int((time.time() - t) * 1000)
+                log(f"llamada: cerebro error {type(e).__name__}: {str(e)[:150]}")
+                resp = "He tenido un fallo al pensar la respuesta."
+                return sale(oido, resp, voz_de(resp), error="cerebro")
+            ms["cerebro"] = int((time.time() - t) * 1000)
+            return sale(oido, resp, voz_de(resp))
+        return self._job(turno)
 
     def _static(self, rel):
         """Ficheros públicos de la interfaz (ui/static): js, css, shaders, fuentes, imágenes. Sin secretos, sin listados,
@@ -698,6 +819,17 @@ class Handler(BaseHTTPRequestHandler):
             if action == "agenda_crear":
                 return self._json(200, {"text": H["agenda_crear"](str(d.get("cuando", ""))[:20], str(d.get("texto", ""))[:1500],
                                                                  str(d.get("tipo", "aviso")), str(d.get("repetir", "no"))[:12])})
+            if action == "avisos":      # preguntas/avisos de agentes a David (avisos.py); por defecto solo las pendientes
+                return self._json(200, {"avisos": avisos.listar(d.get("todos") is not True, 50)})
+            if action == "avisos/responder":
+                aid, resp = str(d.get("id", ""))[:20], d.get("respuesta")
+                if not isinstance(resp, str):
+                    return self._json(400, {"error": "falta la respuesta"})
+                ok, why = avisos.responder(aid, resp, self.VIA)
+                if not ok:
+                    return self._json(400, {"error": why})
+                log(f"aviso {aid} respondido desde {self.VIA}")
+                return self._json(200, {"ok": True})
             if action == "launchers":
                 return self._json(200, H["launchers"]())
             if action == "lanzar":
@@ -892,6 +1024,7 @@ class Puente(Handler):
       comprobaciones); aquí solo cambian el host/origen aceptados, la IP (sin Cf-Connecting-Ip) y la cookie sin
       «Secure» (va por HTTP, pero cifrada por WireGuard). /t/ y /login NO existen aquí: el flujo web sigue por el túnel."""
     COOKIE_SECURE = ""
+    VIA = "app"
     RUTAS_GET = ("/a/", "/s/", "/api/job/")
     RUTAS_GET_EXACTAS = ("/app", "/gone")
     RUTAS_FRECUENTES = ("/api/vivo", "/api/raton")   # la pantalla remota, ~3/s: solo si fallan o tardan > 1500 ms
@@ -975,12 +1108,15 @@ class Puente(Handler):
 
     def do_POST(self):
         if not self._de_tailscale():
+            self._drenar()
             return self._out(404, "no")
         p = self.path.split("?")[0]
         if p == "/puente/app":
+            self._drenar()           # esta ruta no usa el cuerpo: leerlo evita que Windows resetee la conexión al contestar
             return self._medido(self._app)
         if p.startswith("/api/") or p == "/logout":
             return self._medido(super().do_POST)
+        self._drenar()
         if p != "/puente/enlace":
             return self._out(404, "no")
         sec = equipos_cfg().get("secreto", "")
