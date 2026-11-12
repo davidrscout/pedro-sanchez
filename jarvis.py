@@ -26,6 +26,7 @@ import psutil
 import requests
 
 import agenda
+import avisos
 import backends
 import launchers
 import memoria
@@ -220,6 +221,8 @@ HERRAMIENTAS = """
   sin pedir permiso y sin anunciarlo con pompa. Si un hecho guardado queda obsoleto: olvidar + recordar el nuevo.
 - Agenda: «recuérdame…», «avísame a las…», «cada mañana dime…» -> programar (aviso o tarea). agenda_listar / agenda_borrar.
 - avisar_telegram solo si David lo pide o al terminar algo largo que te encargó.
+- preguntar_a_david(pregunta, opciones) cuando necesites una decisión suya para seguir y no puedas tomarla tú con seguridad:
+  se queda esperando (hasta 14 min) a que responda en la app. avisar_a_david(texto) = aviso sin respuesta. Con moderación.
 - En modo actuar tienes además clic, rueda, escribir_texto, atajo, ventana, lanzar y cerrar_proceso: mira la pantalla
   antes y después de cada acción; si algo es destructivo o ambiguo, pregunta antes.
 """
@@ -377,8 +380,10 @@ def env_sin_pago():
     return {k: v for k, v in os.environ.items() if k.upper() not in PAGO_ENV}
 
 
-def run_claude(prompt, mode, efimera=False):
-    """Cerebro predeterminado. efimera=True: conversación aparte que no toca la de David (tareas programadas)."""
+def run_claude(prompt, mode, efimera=False, modelo=None):
+    """Cerebro predeterminado. efimera=True: conversación aparte que no toca la de David (tareas programadas).
+    modelo: solo para las llamadas de voz (JARVIS_MODELO_VOZ, p. ej. haiku/sonnet); None = el de siempre (JARVIS_MODELO o el
+    de Claude Code). Sigue siendo la suscripción (env_sin_pago): cambiar de modelo no cambia de cuenta."""
     if mode not in ("ask", "do"):
         mode = "ask"
     st = _estado_claude() if efimera else load_state()
@@ -386,7 +391,9 @@ def run_claude(prompt, mode, efimera=False):
         flag = ["--resume", st["session"]] if st["started"] else ["--session-id", st["session"]]
         args = [CLAUDE, "-p", "--output-format", "json", "--append-system-prompt-file", str(prompt_sesion()),
                 "--mcp-config", str(mcp_config_claude(mode)), "--strict-mcp-config"] + flag
-        if CFG.get("JARVIS_MODELO"):          # p. ej. sonnet / opus / haiku; vacío = el de por defecto de Claude Code
+        if modelo and re.fullmatch(r"[A-Za-z0-9._\-\[\]]{1,60}", str(modelo)):
+            args += ["--model", str(modelo)]
+        elif CFG.get("JARVIS_MODELO"):          # p. ej. sonnet / opus / haiku; vacío = el de por defecto de Claude Code
             args += ["--model", CFG["JARVIS_MODELO"]]
         if mode == "ask":
             args += ["--allowedTools", C_ASK_TOOLS, "--disallowedTools", C_ASK_DENY]
@@ -522,16 +529,17 @@ def run_kimi(prompt, mode, efimera=False):
     return "El cerebro no respondió."
 
 
-def brain_sync(prompt, mode, backend="claude"):
+def brain_sync(prompt, mode, backend="claude", modelo=None):
     """Un solo cerebro a la vez. mode: 'ask' (solo lectura/plan) o 'do' (SIN pedir permisos).
-    backend (elegido A MANO en el panel, nunca automático): claude | kimi | agy | local."""
+    backend (elegido A MANO en el panel, nunca automático): claude | kimi | agy | local.
+    modelo: solo lo usa Claude y solo lo pasan las llamadas de voz (webpanel, JARVIS_MODELO_VOZ)."""
     if mode not in ("ask", "do"):
         mode = "ask"
     if not BRAIN_LOCK.acquire(blocking=False):
         return "Sigo con la tarea anterior, espera a que termine."
     try:
         if backend == "claude":
-            return run_claude(prompt, mode) or "(sin respuesta)"
+            return run_claude(prompt, mode, modelo=modelo) or "(sin respuesta)"
         if backend == "kimi":
             return run_kimi(prompt, mode) or "(sin respuesta)"
         if backend == "agy":
@@ -712,6 +720,87 @@ def _disparar_tarea(it):
     threading.Thread(target=go, daemon=True).start()
 
 
+# ---------------------------------------------------------------- avisos y preguntas a David (avisos.py)
+def tg_respuestas():
+    """Botones de respuesta en Telegram: APAGADO por defecto (la cuenta de Telegram de David no se considera fiable para decidir)."""
+    return CFG.get("JARVIS_TG_RESPUESTAS", "0") == "1"
+
+
+def _texto_aviso(a):
+    cab = "🚨 URGENTE\n" if a.get("urgente") else ""
+    if not a.get("espera"):
+        return f"{cab}🔔 {a['origen']}: {a['texto']}"
+    pie = "Respóndeme con los botones o en la app Pedro." if (tg_respuestas() and a.get("opciones")) else "Respóndeme en la app Pedro."
+    ops = ("\nOpciones: " + " / ".join(a["opciones"])) if a.get("opciones") else ""
+    return f"{cab}❓ {a['origen']} pregunta: {a['texto']}{ops}\n\n{pie}"
+
+
+def _botones_aviso(a):
+    """Teclado inline con las opciones (callback_data av:<id>:<n>) solo si JARVIS_TG_RESPUESTAS=1; si no, None."""
+    if not (tg_respuestas() and a.get("espera") and a.get("opciones")):
+        return None
+    bs = [{"text": o[:40], "callback_data": f"av:{a['id']}:{i}"} for i, o in enumerate(a["opciones"])]
+    por_fila = 1 if any(len(o) > 18 for o in a["opciones"]) else 2
+    return {"inline_keyboard": [bs[i:i + por_fila] for i in range(0, len(bs), por_fila)]}
+
+
+def entregar_avisos():
+    """Manda a Telegram los avisos nuevos. Si un envío falla vuelve a la cola (hasta 5 intentos)."""
+    for a in avisos.sacar_no_notificados():
+        data = {"chat_id": ALLOWED, "text": _texto_aviso(a)}
+        mk = _botones_aviso(a)
+        if mk:
+            data["reply_markup"] = json.dumps(mk)
+        r = tg("sendMessage", data=data)
+        if r:
+            avisos.marcar_mensaje(a["id"], r.get("message_id"))
+            log(f"aviso {a['id']} entregado a Telegram ({'pregunta' if a.get('espera') else 'informativo'} de {a['origen']})")
+        else:
+            avisos.devolver_a_la_cola(a["id"])
+
+
+def actualizar_mensajes_avisos():
+    """Al responderse (por la vía que sea) o caducar una pregunta, su mensaje de Telegram pasa a «✅ Respondido: X» y pierde los botones."""
+    for a in avisos.por_editar():
+        if a["estado"] == "respondido":
+            txt = f"✅ Respondido: {a['respuesta']}\n\n❓ {a['origen']}: {a['texto']}"
+        else:
+            txt = f"⌛ Sin respuesta (caducó)\n\n❓ {a['origen']}: {a['texto']}"
+        tg("editMessageText", data={"chat_id": ALLOWED, "message_id": a["tg_msg"], "text": txt[:3900]})
+        avisos.marcar_editado(a["id"])
+
+
+def servicio_avisos():
+    try:
+        avisos.caducar_viejos(24)
+        entregar_avisos()
+        actualizar_mensajes_avisos()
+    except Exception as e:
+        log(f"avisos error {type(e).__name__}: {str(e)[:150]}")
+
+
+def handle_aviso_callback(cb):
+    """Pulsación de un botón de aviso (av:<id>:<n>). Quien llama ya comprobó que es ALLOWED; aquí además hace falta
+    JARVIS_TG_RESPUESTAS=1 (por defecto apagado) y que el botón sea de un aviso pendiente con esa opción."""
+    cid = cb.get("id")
+
+    def contesta(txt):
+        tg("answerCallbackQuery", data={"callback_query_id": cid, "text": txt[:180]})
+    if not tg_respuestas():
+        contesta("Responder desde Telegram está desactivado: usa la app Pedro.")
+        return
+    m = re.fullmatch(r"av:([0-9a-f]{8}):(\d{1,2})", cb.get("data") or "")
+    a = avisos.obtener(m.group(1)) if m else None
+    if not a or int(m.group(2)) >= len(a["opciones"]):
+        contesta("Ese botón ya no vale.")
+        return
+    ok, why = avisos.responder(a["id"], a["opciones"][int(m.group(2))], "telegram")
+    contesta("Respondido: " + a["opciones"][int(m.group(2))] if ok else why)
+    if ok:
+        log(f"aviso {a['id']} respondido por Telegram")
+        servicio_avisos()
+
+
 def servicio():
     n = 0
     while True:
@@ -724,6 +813,7 @@ def servicio():
                     send_text(ALLOWED, f"⏰ Recordatorio{tarde}: {it['texto']}")
             for txt in agenda.sacar_bandeja():
                 send_text(ALLOWED, "Pedro: " + txt)
+            servicio_avisos()
             if n % 3 == 0 and CFG.get("JARVIS_ALERTAS", "1") == "1":
                 vigilar()
         except Exception as e:
@@ -752,6 +842,11 @@ def handle_callback(cb):
     if uid != ALLOWED:
         log(f"callback de usuario NO autorizado id={uid}")
         return
+    if (cb.get("data") or "").startswith("av:"):      # respuesta a un aviso (solo con JARVIS_TG_RESPUESTAS=1)
+        if chat is not None and chat != ALLOWED:
+            log(f"callback de aviso desde un chat que no es el de David ({chat})")
+            return
+        return handle_aviso_callback(cb)
     tg("answerCallbackQuery", data={"callback_query_id": cb.get("id")})
     if not TG_CONTROL:
         return
@@ -965,7 +1060,63 @@ def selftest():
     handle_update({"message": {"from": {"id": 111}, "chat": {"id": 111}, "text": "/loquesea"}})
     print("\nrespuestas simuladas:", [(k, str(v)[:40]) for k, _, v in sent])
     print("PENDING tras /hacer:", len(PENDING), "(debe ser 1)")
+    selftest_avisos()
     print("SELFTEST OK")
+
+
+def selftest_avisos():
+    """Entrega y respuesta de avisos con Telegram FALSO y una carpeta temporal: no sale nada real."""
+    import tempfile
+    llamadas = []
+    tg_real, dir_antes, cfg_antes = globals()["tg"], os.environ.get("JARVIS_AVISOS_DIR"), CFG.get("JARVIS_TG_RESPUESTAS")
+    os.environ["JARVIS_AVISOS_DIR"] = tempfile.mkdtemp(prefix="avisos_selftest_")
+    globals()["tg"] = lambda method, data=None, files=None, timeout=15: (llamadas.append((method, data)) or {"message_id": 4242})
+    try:
+        CFG.pop("JARVIS_TG_RESPUESTAS", None)
+        q = avisos.crear("¿Sigo?", ["Sí", "No"], espera=True, origen="Orquestador X")
+        i = avisos.crear("Terminé", origen="Pedro")
+        entregar_avisos()
+        envios = [d for m, d in llamadas if m == "sendMessage"]
+        assert len(envios) == 2 and all(d["chat_id"] == ALLOWED for d in envios), "entrega de avisos"
+        assert envios[0]["text"].startswith("❓ Orquestador X pregunta: ¿Sigo?") and "Respóndeme en la app Pedro" in envios[0]["text"]
+        assert envios[1]["text"] == "🔔 Pedro: Terminé"
+        assert "reply_markup" not in envios[0], "sin JARVIS_TG_RESPUESTAS no hay botones"
+        cb = {"id": "c1", "from": {"id": ALLOWED}, "message": {"chat": {"id": ALLOWED}}, "data": f"av:{q['id']}:0"}
+        handle_callback(cb)
+        assert avisos.obtener(q["id"])["estado"] == "pendiente", "con respuestas por Telegram apagadas, el botón no responde"
+        CFG["JARVIS_TG_RESPUESTAS"] = "1"
+        q2 = avisos.crear("¿Borro?", ["Sí", "No"], espera=True)
+        del llamadas[:]
+        entregar_avisos()
+        mk = json.loads([d for m, d in llamadas if m == "sendMessage"][0]["reply_markup"])
+        assert mk["inline_keyboard"][0][0]["callback_data"] == f"av:{q2['id']}:0" and "Respóndeme con los botones" in llamadas[0][1]["text"]
+        handle_callback(dict(cb, **{"from": {"id": 999}, "data": f"av:{q2['id']}:0"}))
+        assert avisos.obtener(q2["id"])["estado"] == "pendiente", "¡un usuario no autorizado respondió un aviso!"
+        handle_callback(dict(cb, message={"chat": {"id": 12345}}, data=f"av:{q2['id']}:0"))
+        assert avisos.obtener(q2["id"])["estado"] == "pendiente", "un chat que no es el de David no responde"
+        del llamadas[:]
+        handle_callback(dict(cb, data=f"av:{q2['id']}:1"))
+        a2 = avisos.obtener(q2["id"])
+        assert a2["estado"] == "respondido" and a2["respuesta"] == "No" and a2["via"] == "telegram", "respuesta por botón"
+        ed = [d for m, d in llamadas if m == "editMessageText"]
+        assert ed and ed[0]["text"].startswith("✅ Respondido: No") and ed[0]["message_id"] == 4242, "el mensaje pasa a «Respondido»"
+        handle_callback(dict(cb, data=f"av:{q2['id']}:0"))
+        assert avisos.obtener(q2["id"])["respuesta"] == "No", "doble pulsación: gana la primera"
+        avisos.responder(q["id"], "Sí", "app")                 # respondida en la app: el mensaje de Telegram se actualiza solo
+        del llamadas[:]
+        actualizar_mensajes_avisos()
+        assert any(m == "editMessageText" and "Respondido: Sí" in d["text"] for m, d in llamadas), "respuesta por la app -> se edita el mensaje"
+        print("avisos: entrega, botones (apagados por defecto), solo ALLOWED y edición del mensaje OK")
+    finally:
+        globals()["tg"] = tg_real
+        if dir_antes is None:
+            os.environ.pop("JARVIS_AVISOS_DIR", None)
+        else:
+            os.environ["JARVIS_AVISOS_DIR"] = dir_antes
+        if cfg_antes is None:
+            CFG.pop("JARVIS_TG_RESPUESTAS", None)
+        else:
+            CFG["JARVIS_TG_RESPUESTAS"] = cfg_antes
 
 
 if __name__ == "__main__":
