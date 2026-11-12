@@ -35,3 +35,8 @@ equipos.json
 
 # Secreto de la app nativa Pedro (iPhone)
 app_pedro.json
+
+# Avisos y preguntas a David (datos vivos + candado entre procesos)
+avisos.json
+avisos.lock
+avisos.json.corrupto_*
