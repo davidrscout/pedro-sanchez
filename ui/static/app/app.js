@@ -1378,12 +1378,67 @@ $("salir").addEventListener("click", async () => {
   medir(); if (!RM.matches) raf = requestAnimationFrame(bucle);
 })();
 
+/* ---------- «Pedro te pregunta»: preguntas pendientes de agentes (POST /api/avisos, POST /api/avisos/responder) ----------
+   Se sondea cada 10 s (el poller se para con la pestaña del navegador oculta). Las tarjetas se actualizan por diferencias: lo que
+   David está escribiendo en una no se pierde cuando llega otra. Todo texto del servidor se pinta con textContent. */
+const Avisos = (() => {
+  const caja = $("avisos"), lista = $("av-lista"), cuenta = $("av-cuenta"), ins = $("av-n"), tab = $("tab-hablar");
+  const tarjetas = new Map(), enviando = new Set(); let primera = true;
+  const cuando = s => { const t = String(s || ""), hoy = new Date(), p = n => String(n).padStart(2, "0");
+    const d = hoy.getFullYear() + "-" + p(hoy.getMonth() + 1) + "-" + p(hoy.getDate());
+    return t.slice(0, 10) === d ? t.slice(11, 16) : t.slice(8, 10) + "/" + t.slice(5, 7) + " " + t.slice(11, 16); };
+  function pinta() {
+    const n = tarjetas.size;
+    caja.hidden = !n; cuenta.textContent = n > 1 ? n + " pendientes" : "";
+    ins.hidden = !n; ins.textContent = n > 9 ? "9+" : String(n);
+    if (n) tab.setAttribute("aria-label", "Hablar, " + plural(n, "pregunta pendiente", "preguntas pendientes")); else tab.removeAttribute("aria-label");
+  }
+  function quita(id) {
+    const c = tarjetas.get(id); if (!c) return; tarjetas.delete(id); c.classList.add("sale"); pinta();
+    setTimeout(() => c.remove(), RM.matches ? 0 : 260);
+  }
+  async function responder(id, texto, c) {
+    const r = String(texto || "").trim(); if (!r || enviando.has(id)) return;
+    enviando.add(id); c.classList.add("env"); const ctl = [...c.querySelectorAll("button,input")]; ctl.forEach(x => { x.disabled = true; });
+    try { await api("/api/avisos/responder", { id, respuesta: r }); toast("Respuesta enviada.", "ok", 1800); quita(id); }
+    catch (e) { if (e instanceof AuthErr) return;
+      c.classList.remove("env"); ctl.forEach(x => { x.disabled = false; }); toast(errText(e), "warn", 3600);
+      if (!(e instanceof NetErr)) cargar().catch(() => { }); }          /* ya estaba respondida o caducó: se refresca la lista */
+    finally { enviando.delete(id); }
+  }
+  function tarjeta(a) {
+    const campo = h("input", { type: "text", maxlength: "2000", autocomplete: "off", enterkeyhint: "send", placeholder: "Responde con tus palabras", "aria-label": "Tu respuesta a: " + String(a.texto).slice(0, 80) });
+    const env = h("button", { class: "bt fuerte", type: "submit", disabled: true }, "Enviar");
+    const form = h("form", { class: "av-resp" }, campo, env);
+    const c = h("article", { class: "av" + (a.urgente ? " urg" : ""), role: "listitem", "data-id": a.id },
+      h("p", { class: "av-de" }, String(a.origen || "Pedro") + " · " + cuando(a.creado), a.urgente ? h("span", { class: "u", text: "Urgente" }) : null),
+      h("p", { class: "av-txt", text: a.texto }),
+      Array.isArray(a.opciones) && a.opciones.length ? h("div", { class: "av-ops" }, a.opciones.map(o => h("button", { class: "bt", type: "button", onclick: () => responder(a.id, o, c) }, String(o)))) : null,
+      form);
+    campo.addEventListener("input", () => { env.disabled = !campo.value.trim(); });
+    form.addEventListener("submit", e => { e.preventDefault(); responder(a.id, campo.value, c); });
+    return c;
+  }
+  async function cargar() {
+    const j = await api("/api/avisos", {});
+    const its = (Array.isArray(j.avisos) ? j.avisos : []).filter(a => a && a.id && a.estado === "pendiente" && typeof a.texto === "string");
+    const hay = new Set(its.map(a => a.id));
+    [...tarjetas.keys()].forEach(id => { if (!hay.has(id) && !enviando.has(id)) quita(id); });
+    const nuevos = its.filter(a => !tarjetas.has(a.id));
+    (primera ? nuevos : nuevos.slice().reverse()).forEach(a => { const c = tarjeta(a); tarjetas.set(a.id, c); primera ? lista.append(c) : lista.prepend(c); });
+    if (!primera && nuevos.length && Nav.actual !== "hablar") toast("Pedro te pregunta: " + nuevos[0].texto.slice(0, 70), "", 4500);
+    primera = false; pinta();
+  }
+  const poll = poller(cargar, 10000);
+  return { poll, cargar, get n() { return tarjetas.size; } };
+})();
+
 /* arranque */
 addEventListener("keydown", e => { if (e.key === "/" && !/TEXTAREA|INPUT/.test((document.activeElement || {}).tagName || "") && !Hoja.pila.length) { e.preventDefault(); ir("hablar"); Chat.textarea.focus(); } });
 /* entrada de las tarjetas de Más: se despliegan una sola vez, la primera vez que se abre la pestaña */
 (() => { const r = $("mas-rejilla"); [...r.children].forEach((c, i) => c.style.setProperty("--n", i)); let hecho = false;
   on("mas", () => { if (hecho) return; hecho = true; r.classList.add("intro"); setTimeout(() => r.classList.remove("intro"), 1800); }); })();
-P.start(); pollSismo.start(); Chat.cargar();
+P.start(); pollSismo.start(); Chat.cargar(); Avisos.poll.start();
 /* se precargan los datos de las vistas para que las tarjetas de la portada tengan su dato vivo desde el primer momento */
 ["vigilante", "red", "memoria", "lanzar"].forEach(v => (alMostrar[v] || []).forEach(f => { try { f(); } catch (e) { } }));
 Pollers.forEach(p => p._vista && p.start());

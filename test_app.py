@@ -262,6 +262,17 @@ for ruta in ("/api/avisos", "/api/avisos/responder", "/api/llamada/turno"):
     ok(requests.post(f"{P}{ruta}", headers=CK, json={}, timeout=5).status_code == 403, f"puente: {ruta} sin X-Jarvis -> 403")
     ok(requests.post(f"{F}{ruta}", headers=HJ, json={}, timeout=5).status_code == 404, f"fuera de Tailscale: {ruta} -> 404")
 
+# --- la pestaña Hablar trae la franja «Pedro te pregunta» y el contador
+pagina = requests.get(f"{P}/app", headers=CK, timeout=5).text
+ok('id="avisos"' in pagina and 'id="av-lista"' in pagina and 'id="av-cuenta"' in pagina and "Pedro te pregunta" in pagina, "puente: /app trae la franja «Pedro te pregunta» en Hablar")
+ok(pagina.index('id="avisos"') < pagina.index('id="h-conv"'), "la franja va encima de la conversación")
+ok('id="av-n"' in pagina and pagina.index('id="tab-hablar"') < pagina.index('id="av-n"') < pagina.index('id="tab-pantalla"'), "el contador está dentro de la pestaña Hablar de la barra")
+js = requests.get(f"{P}/s/app/app.js", timeout=5).text
+ok("/api/avisos/responder" in js and "poller(cargar, 10000)" in js, "app.js sondea los avisos cada 10 s y responde por /api/avisos/responder")
+css = requests.get(f"{P}/s/app/app.css", timeout=5).text
+bloque = css[css.index("/* «Pedro te pregunta»"):css.index("/* Pulso: la tarjeta grande")]
+ok(".av{" in bloque and not any(x in bloque.lower() for x in ("naranja", "orange", "ámbar", "amber")), "los estilos nuevos no usan naranja y van antes del bloque del mando")
+
 # --- avisos
 ok(requests.post(f"{P}/api/avisos", headers=HJ, json={}, timeout=5).json() == {"avisos": []}, "puente: /api/avisos sin nada -> {avisos: []}")
 preg = av.crear("¿Sigo con el despliegue?", ["Sí", "No"], espera=True, urgente=True, origen="Orquestador Gemsy")

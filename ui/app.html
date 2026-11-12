@@ -46,6 +46,12 @@
         </div>
       </section>
 
+      <!-- «Pedro te pregunta»: preguntas pendientes de agentes (Pedro, orquestadores…); solo se ve si hay alguna -->
+      <section class="avisos" id="avisos" aria-labelledby="h-avisos" hidden>
+        <div class="chat-bar"><h2 id="h-avisos">Pedro te pregunta</h2><span class="av-cuenta num" id="av-cuenta"></span></div>
+        <div class="av-lista" id="av-lista" role="list"></div>
+      </section>
+
       <div class="chat-bar"><h2 id="h-conv">Conversación</h2>
         <button class="lnk-s" type="button" id="c-nueva" aria-label="Empezar conversación nueva" title="Empezar conversación nueva">Nueva</button></div>
       <details class="ajustes" id="txt-op">
@@ -310,7 +316,7 @@
 <nav class="pestanas" id="pestanas" aria-label="Secciones de Pedro">
   <div class="pest-bar" id="pest-bar" role="tablist" aria-label="Secciones" data-act="hablar">
     <i class="pest-pil" aria-hidden="true"><b></b><b></b><b></b><b></b><b></b></i>
-    <button class="pest-t" type="button" role="tab" id="tab-hablar" data-tab="hablar" aria-controls="v-hablar" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12.5h5"/></svg><span>Hablar</span></button>
+    <button class="pest-t" type="button" role="tab" id="tab-hablar" data-tab="hablar" aria-controls="v-hablar" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12.5h5"/></svg><span>Hablar</span><b class="pest-n" id="av-n" aria-hidden="true" hidden></b></button>
     <button class="pest-t" type="button" role="tab" id="tab-pantalla" data-tab="pantalla" aria-controls="v-pantalla" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg><span>Pantalla</span></button>
     <button class="pest-t" type="button" role="tab" id="tab-pulso" data-tab="pulso" aria-controls="v-pulso" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg><span>Pulso</span></button>
     <button class="pest-t" type="button" role="tab" id="tab-lanzar" data-tab="lanzar" aria-controls="v-lanzar" aria-selected="false" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.6"/></svg><span>Lanzar</span></button>
