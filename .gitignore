@@ -40,3 +40,9 @@ app_pedro.json
 avisos.json
 avisos.lock
 avisos.json.corrupto_*
+
+# 12/11: estado local, capturas y config de T3 Code
+jarvis_state_*.json
+ui/_capturas_*/
+.t3/
+t3.json
